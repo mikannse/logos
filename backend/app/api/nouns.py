@@ -56,6 +56,36 @@ async def search_nouns(
     )
 
 
+@router.get("/nouns/suggest")
+async def suggest_nouns(
+    q: str = Query(..., min_length=2, max_length=100, description="搜索提示"),
+    lang: str = Query(default="zh", description="语言 (zh/en)"),
+):
+    """搜索建议（autocomplete）
+
+    轻量级接口，为搜索框输入提供即时补全建议。
+    查询 Wikidata 返回匹配项，含缓存。
+    """
+    service = get_search_service()
+    suggestions = await service.suggest(q, language=lang)
+    return {"suggestions": suggestions}
+
+
+@router.get("/nouns/fuzzy")
+async def fuzzy_search_nouns(
+    q: str = Query(..., min_length=2, max_length=200, description="模糊搜索名词"),
+    lang: str = Query(default="zh", description="语言 (zh/en)"),
+):
+    """模糊语义搜索
+
+    当精确搜索未命中时降级到模糊匹配。
+    返回带相似度分数的结果。
+    """
+    service = get_search_service()
+    results = await service.search_fuzzy(q, language=lang)
+    return {"query": q, "results": results, "total": len(results)}
+
+
 @router.get("/nouns/{noun_id}")
 async def get_noun(noun_id: str):
     """获取名词详情"""

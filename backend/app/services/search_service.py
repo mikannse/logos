@@ -3,11 +3,13 @@
 搜索策略：
 1. 精确匹配 Neo4j 缓存
 2. 未命中 → Wikidata API 搜索
-3. 结果写入 Neo4j + Redis 缓存
-4. 跨语言对齐：同一 Wikidata Q ID 合并不同语言标签
-5. 消歧判断：如果返回多个不同实体，标记 needs_disambiguation=True
+3. 模糊匹配（N-gram / Levenshtein fallback）
+4. 结果写入 Neo4j + Redis 缓存
+5. 跨语言对齐：同一 Wikidata Q ID 合并不同语言标签
+6. 消歧判断：如果返回多个不同实体，标记 needs_disambiguation=True
 """
 
+import difflib
 from typing import Optional
 
 from app.repositories.wikidata_repo import WikidataRepository, WikidataEntity
@@ -225,3 +227,149 @@ class SearchService:
             return result
 
         return None
+
+    async def search_fuzzy(self, query: str, language: str = "zh") -> list[dict]:
+        """模糊语义搜索
+
+        当精确搜索未命中时降级：
+        1. Wikidata 搜索（自带模糊匹配）
+        2. 如果无结果，拆词后搜索核心关键词
+        3. 返回带相似度分数的结果
+        """
+        # Try full query first
+        raw_entities = await self.wikidata.search(query, language=language)
+        if not raw_entities and language == "zh":
+            raw_entities = await self.wikidata.search(query, language="en")
+
+        # If no results, try extracting core keywords from multi-word queries
+        if not raw_entities and len(query) > 4:
+            # Try the longest meaningful sub-query (for "深度学习之父" → "深度学习")
+            # Chinese multi-word queries often contain a known entity + qualifier
+            core_terms = self._extract_core_terms(query, language)
+            for term in core_terms:
+                raw_entities = await self.wikidata.search(term, language=language)
+                if raw_entities:
+                    break
+
+        if not raw_entities:
+            return []
+
+        # Dedup and transform
+        seen_ids: set[str] = set()
+        results = []
+
+        for entity in raw_entities:
+            if entity.id in seen_ids:
+                continue
+            seen_ids.add(entity.id)
+
+            similarity = self._calc_similarity(query, entity)
+
+            result = {
+                "id": entity.id,
+                "name": entity.label,
+                "type": entity.type,
+                "confidence": 0.9 if entity.sitelink_zh or entity.sitelink_en else 0.6,
+                "summary": entity.description,
+                "similarity": round(similarity, 2),
+            }
+            results.append(result)
+
+        results.sort(key=lambda r: (r["similarity"], r["confidence"]), reverse=True)
+        return results[:5]
+
+    def _extract_core_terms(self, query: str, language: str = "zh") -> list[str]:
+        """从多词查询中提取核心搜索词
+
+        如 "深度学习之父" → ["深度学习", "深度"]
+        "father of deep learning" → ["deep learning", "learning"]
+        """
+        terms = []
+
+        if language == "zh":
+            # Chinese: try reducing by 2 characters at a time
+            for end in range(len(query), 3, -1):
+                candidate = query[:end]
+                if 4 <= len(candidate) <= 12:
+                    terms.append(candidate)
+        else:
+            # English: split by spaces, try adjacent pairs
+            words = query.lower().split()
+            for i in range(len(words) - 1):
+                terms.append(" ".join(words[i:i + 2]))
+            # Also try last meaningful word
+            if words:
+                terms.append(words[-1])
+
+        return terms
+
+    async def suggest(self, query: str, language: str = "zh") -> list[dict]:
+        """搜索建议（autocomplete）
+
+        轻量级建议，用于前端搜索框的即时补全：
+        1. 从 Redis 缓存获取热门建议
+        2. 从 Wikidata 搜索匹配项
+        """
+        if len(query) < 2:
+            return []
+
+        # Check cache for suggestions
+        cache_key = f"suggest:{language}:{query.lower()}"
+        cached = await self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Query Wikidata for quick suggest
+        raw_entities = await self.wikidata.search(query, language=language, limit=6)
+
+        if not raw_entities and language == "zh":
+            raw_entities = await self.wikidata.search(query, language="en", limit=6)
+
+        suggestions = []
+        seen_ids = set()
+        for entity in raw_entities:
+            if entity.id in seen_ids:
+                continue
+            seen_ids.add(entity.id)
+            suggestions.append({
+                "id": entity.id,
+                "name": entity.label,
+                "type": entity.type,
+                "summary": entity.description[:80] if entity.description else "",
+            })
+
+        # Cache for 5 minutes
+        if suggestions:
+            await self.cache.set(cache_key, suggestions, ttl=300)
+
+        return suggestions
+
+    def _calc_similarity(self, query: str, entity: WikidataEntity) -> float:
+        """计算查询和实体之间的模糊相似度
+
+        Uses difflib SequenceMatcher for approximate string matching.
+        """
+        query_lower = query.lower()
+        best_score = 0.0
+
+        # Compare against label
+        label_score = difflib.SequenceMatcher(None, query_lower, entity.label.lower()).ratio()
+        best_score = max(best_score, label_score)
+
+        # Compare against aliases
+        for alias in entity.aliases:
+            alias_score = difflib.SequenceMatcher(None, query_lower, alias.lower()).ratio()
+            best_score = max(best_score, alias_score)
+
+        # Bonus for substring matches (e.g. "深度学习之父" contains "深度学习")
+        if query_lower in entity.label.lower():
+            best_score = max(best_score, 0.6)
+        for alias in entity.aliases:
+            if query_lower in alias.lower():
+                best_score = max(best_score, 0.6)
+            if alias.lower() in query_lower:
+                best_score = max(best_score, 0.5)
+
+        # Wikidata search ranking already gives us reasonably relevant results,
+        # so we boost minimum score to keep first few results visible
+        return max(best_score, 0.3)

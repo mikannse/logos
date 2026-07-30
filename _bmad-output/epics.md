@@ -236,6 +236,29 @@ So that 我无需打开多个标签页就能获得该名词的结构化信息。
 
 ---
 
+### Story 1.3b: 实体消歧与用户选择界面
+
+As a **普通用户**,
+I want 搜索有歧义的名词时弹出消歧选择窗口，让我明确选择目标实体,
+So that 即使有多个同名实体，我也能准确找到我想探索的那一个。
+
+**Acceptance Criteria:**
+
+**Given** 用户搜索一个有多义的名词（如"苹果"→水果/公司、"Java"→编程语言/岛屿）
+**When** API 检测到返回多个不同实体
+**Then** 搜索 API 返回 `needs_disambiguation: true` + `disambiguation_groups`
+**And** 前端弹出 DisambiguationDialog 消歧弹窗
+**And** 每个消歧项展示：实体名称、英文名（跨语言识别）、类型标签（人物/公司/概念等）、置信度、描述
+**And** 弹窗支持键盘导航（↑↓选择，Enter确认，Escape关闭）
+**And** 用户选择某一实体后，前端导航至该实体的图谱视图
+**And** 跨语言对齐：同一 Wikidata Q ID 的不同语言标签合并为同一实体
+**And** 按 Wikidata P31（instance of）推断可读类型标签
+**And** 各实体按置信度降序排列，Wikipedia 页面来源优先级最高
+
+**覆蓋需求:** FR-1（名词搜索含消歧）、架构附加 5（API 格式扩展）
+
+---
+
 ### Story 1.4: 模糊语义搜索
 
 As a **普通用户**,
