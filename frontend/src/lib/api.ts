@@ -39,6 +39,23 @@ export interface SearchResult {
   summary?: string;
 }
 
+export interface DisambiguationGroup {
+  id: string;
+  label: string;
+  label_en: string;
+  type_label: string;
+  confidence: number;
+  summary: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  query: string;
+  total: number;
+  needs_disambiguation: boolean;
+  disambiguation_groups: DisambiguationGroup[];
+}
+
 export interface GraphNode {
   id: string;
   label: string;
@@ -80,11 +97,10 @@ export interface TimelineResponse {
   total: number;
 }
 
-export async function searchNouns(query: string): Promise<SearchResult[]> {
-  const data = await request<{ results: SearchResult[] }>(
+export async function searchNouns(query: string): Promise<SearchResponse> {
+  return request<SearchResponse>(
     `/api/nouns?q=${encodeURIComponent(query)}`
   );
-  return data.results;
 }
 
 export async function fetchGraph(

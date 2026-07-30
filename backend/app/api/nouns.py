@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Query
 
-from app.models.noun import NounSearchResponse, NounResponse
+from app.models.noun import (
+    NounSearchResponse,
+    NounResponse,
+    DisambiguationGroup,
+)
 from app.services.search_service import SearchService
 
 router = APIRouter(tags=["nouns"])
@@ -20,16 +24,16 @@ async def search_nouns(
     q: str = Query(..., min_length=2, max_length=200, description="搜索名词"),
     lang: str = Query(default="zh", description="语言 (zh/en)"),
 ):
-    """名词搜索
+    """名词搜索（含消歧）
 
     搜索流程：
     1. 精确匹配 Neo4j 缓存
-    2. 未命中 → Wikidata API 查询（跨语言对齐）
+    2. 未命中 → Wikidata API 查询（跨语言对齐，实体去重）
     3. 结果写入 Neo4j + Redis 缓存
-    4. 返回结构化结果
+    4. 多义检测：如果返回多个不同实体，标记 needs_disambiguation=True
     """
     service = get_search_service()
-    results = await service.search(q, language=lang)
+    result = await service.search(q, language=lang)
 
     return NounSearchResponse(
         results=[
@@ -40,10 +44,15 @@ async def search_nouns(
                 confidence=r.get("confidence", 0.5),
                 summary=r.get("summary", ""),
             )
-            for r in results
+            for r in result.get("results", [])
         ],
         query=q,
-        total=len(results),
+        total=len(result.get("results", [])),
+        needs_disambiguation=result.get("needs_disambiguation", False),
+        disambiguation_groups=[
+            DisambiguationGroup(**g)
+            for g in result.get("disambiguation_groups", [])
+        ],
     )
 
 
