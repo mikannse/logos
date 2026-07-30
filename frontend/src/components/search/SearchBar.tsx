@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Search, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Search, Loader2, Settings } from "lucide-react";
 import { useState, useCallback, useRef, useEffect, FormEvent } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -126,18 +127,27 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
           autoComplete="off"
           minLength={2}
         />
-        <button
-          type="submit"
-          disabled={query.trim().length < 2}
-          className="absolute right-2 h-8 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
-          aria-label="搜索"
-        >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            "搜索"
-          )}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="submit"
+            disabled={query.trim().length < 2}
+            className="h-8 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
+            aria-label="搜索"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              "搜索"
+            )}
+          </button>
+          <Link
+            href="/settings"
+            className="h-8 w-8 flex items-center justify-center rounded-lg text-surface-muted-foreground hover:bg-surface-muted hover:text-surface-foreground transition-colors"
+            aria-label="设置"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
       {/* Autocomplete suggestions dropdown */}

@@ -1,14 +1,18 @@
-"""LLM 统一客户端（Instructor 封装）
+"""LLM 统一客户端（LiteLLM + Instructor 封装）
 
-通过 Instructor from_provider() 支持切换 Anthropic / OpenAI。
-所有 LLM 调用集中管理，方便切换提供商和监控成本。
+支持通过前端配置动态设置：
+- 端点 (endpoint): 任意 OpenAI 兼容 API
+- API Key
+- 模型名称
+
+LiteLLM 作为后端统一网关，Instructor 做结构化提取。
 """
 
 from typing import Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
-from app.config import settings
+from app.services.config_service import ConfigService
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -16,92 +20,82 @@ T = TypeVar("T", bound=BaseModel)
 class LLMClient:
     """LLM 统一客户端
 
-    使用 Instructor 封装，一行代码切换提供商：
-    ```python
-    client = instructor.from_anthropic(Anthropic())
-    # 或
-    client = instructor.from_openai(OpenAI())
-    ```
+    从 ConfigService 读取运行时的 LLM 配置（端点/Key/模型），
+    通过 OpenAI 兼容客户端 + Instructor 调用任意 LLM。
+
+    支持 LiteLLM proxy、OpenAI、Anthropic（通过 LiteLLM）、
+    以及任何 OpenAI 兼容 API（vLLM、Ollama、本地模型）。
     """
 
-    def __init__(self, provider: Optional[str] = None):
-        self.provider = provider or settings.llm_provider
+    def __init__(self, config_service: Optional[ConfigService] = None):
+        self.config_service = config_service or ConfigService()
+        self._cached_config = None
         self._client = None
 
-    def _get_client(self):
-        """延迟初始化 LLM 客户端"""
-        if self._client is not None:
-            return self._client
+    async def _load_config(self):
+        """加载最新配置"""
+        self._cached_config = await self.config_service.get_llm_config()
 
-        if self.provider == "anthropic":
-            if not settings.anthropic_api_key:
-                raise ValueError("ANTHROPIC_API_KEY 未设置")
-            import instructor
-            from anthropic import Anthropic
-            self._client = instructor.from_anthropic(
-                Anthropic(api_key=settings.anthropic_api_key)
-            )
-        elif self.provider == "openai":
-            if not settings.openai_api_key:
-                raise ValueError("OPENAI_API_KEY 未设置")
-            import instructor
-            from openai import OpenAI
-            self._client = instructor.from_openai(
-                OpenAI(api_key=settings.openai_api_key)
-            )
-        else:
-            raise ValueError(f"不支持的 LLM 提供商: {self.provider}")
+    async def _get_client(self):
+        """延迟初始化 OpenAI 兼容客户端 + Instructor"""
+        await self._load_config()
+        config = self._cached_config
 
-        return self._client
+        if not config.api_key:
+            raise ValueError("LLM 未配置：请先在设置页面配置 API Key 和端点")
+
+        import instructor
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=config.api_key,
+            base_url=config.endpoint,
+        )
+
+        self._client = instructor.from_openai(client)
+        return self._client, config.model
 
     async def structured_extract(
         self,
         text: str,
         response_model: Type[T],
         system_prompt: str = "",
-        model: str = "claude-sonnet-4-20250514",
+        model: Optional[str] = None,
     ) -> Optional[T]:
         """从非结构化文本中提取结构化数据
 
-        Args:
-            text: 输入文本
-            response_model: Pydantic 模型类
-            system_prompt: 系统提示
-            model: 模型名称
-
-        Returns:
-            结构化数据实例，失败返回 None
+        使用 Instructor 的 response_model 参数实现结构化输出。
         """
         try:
-            client = self._get_client()
+            client, default_model = await self._get_client()
+            model_name = model or default_model
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": text})
 
             response = client.chat.completions.create(
-                model=model,
+                model=model_name,
                 response_model=response_model,
                 messages=messages,
                 max_tokens=4096,
             )
             return response
         except ValueError as e:
-            # API key not configured
-            print(f"LLM client error: {e}")
+            print(f"LLM 配置错误: {e}")
             return None
         except Exception as e:
-            print(f"LLM extraction error: {e}")
+            print(f"结构化提取失败: {e}")
             return None
 
     async def generate_summary(
         self, text: str, max_length: int = 200
     ) -> str:
-        """生成摘要"""
+        """生成文本摘要"""
         try:
-            client = self._get_client()
+            client, model_name = await self._get_client()
             response = client.chat.completions.create(
-                model="claude-sonnet-4-20250514",
+                model=model_name,
                 messages=[
                     {
                         "role": "system",
@@ -114,3 +108,19 @@ class LLMClient:
             return response.choices[0].message.content or ""
         except Exception:
             return ""
+
+    async def chat(self, messages: list[dict], model: Optional[str] = None, max_tokens: int = 1024) -> str:
+        """通用对话（无结构化输出）"""
+        try:
+            client, default_model = await self._get_client()
+            model_name = model or default_model
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+            return response.choices[0].message.content or ""
+        except ValueError as e:
+            return f"配置错误: {e}"
+        except Exception as e:
+            return f"请求失败: {e}"
