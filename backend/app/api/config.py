@@ -4,15 +4,48 @@
 配置存储在 Redis 中，运行时生效。
 """
 
+from urllib.parse import urlparse
+
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.services.config_service import ConfigService, LLMConfig
 
 router = APIRouter(tags=["config"])
 
 _config_service: ConfigService | None = None
+
+# 禁止作为 LLM 端点的内网/保留地址段
+BLOCKED_HOSTS = [
+    "127.0.0.1", "127.0.0.0", "localhost", "::1",
+    "10.", "172.16.", "172.17.", "172.18.", "172.19.",
+    "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
+    "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+    "172.30.", "172.31.", "192.168.", "169.254.",
+    "0.0.0.0", "metadata.google.internal",
+]
+
+
+def validate_endpoint(url: str) -> str:
+    """验证 LLM 端点 URL 安全性和格式"""
+    parsed = urlparse(url)
+
+    if not parsed.scheme:
+        raise HTTPException(status_code=400, detail="端点地址缺少协议头 (https://)")
+
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="不支持的协议，仅支持 http/https")
+
+    host = parsed.hostname or parsed.netloc
+    for blocked in BLOCKED_HOSTS:
+        if host.startswith(blocked):
+            raise HTTPException(
+                status_code=400,
+                detail=f"不允许的端点地址: {url}（内网地址已被拦截）",
+            )
+
+    return url
 
 
 def get_config_service() -> ConfigService:
@@ -60,8 +93,11 @@ class LLMConfigUpdate(BaseModel):
 
 
 @router.put("/config/llm")
-async def update_llm_config(body: LLMConfigUpdate):
+async def update_llm_config(body: LLMConfigUpdate, request: Request):
     """更新 LLM 配置"""
+    # Validate endpoint security
+    validate_endpoint(body.endpoint)
+
     service = get_config_service()
     config = LLMConfig(
         endpoint=body.endpoint,
@@ -74,12 +110,15 @@ async def update_llm_config(body: LLMConfigUpdate):
 
 
 @router.post("/config/llm/test")
-async def test_llm_connection(body: LLMConfigUpdate):
+async def test_llm_connection(body: LLMConfigUpdate, request: Request):
     """测试 LLM 连接
 
     用提供的配置发一条简单的模型请求检查连通性。
     """
     from openai import OpenAI
+
+    # Validate endpoint security before making request
+    validate_endpoint(body.endpoint)
 
     try:
         client = OpenAI(

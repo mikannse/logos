@@ -21,6 +21,15 @@ const NODE_COLORS: Record<string, string> = {
   organization: "#DC2626",
 };
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function createNodePath(type: string, cx: number, cy: number, r: number): string {
   switch (type) {
     case "person":
@@ -211,18 +220,23 @@ export default function GraphCanvas({
 
       // Hover events
       el.on("mouseenter", function (event) {
+        const safeLabel = escapeHtml(d.label);
+        const safeType = escapeHtml(d.type);
+        const safeSummary = d.summary ? escapeHtml(d.summary) : "";
+        const confClass = d.confidence >= 0.8 ? 'text-success' : d.confidence >= 0.5 ? 'text-warning' : 'text-destructive';
+
         tooltip.style("opacity", 1)
           .style("display", "block")
           .html(`
             <div class="p-3 text-sm">
-              <div class="font-semibold text-surface-foreground font-heading">${d.label}</div>
+              <div class="font-semibold text-surface-foreground font-heading">${safeLabel}</div>
               <div class="flex gap-1 mt-1">
-                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted text-surface-muted-foreground">${d.type}</span>
-                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted ${d.confidence >= 0.8 ? 'text-success' : d.confidence >= 0.5 ? 'text-warning' : 'text-destructive'}">
+                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted text-surface-muted-foreground">${safeType}</span>
+                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted ${confClass}">
                   ${Math.round(d.confidence * 100)}%
                 </span>
               </div>
-              ${d.summary ? `<p class="mt-1 text-xs text-surface-muted-foreground">${d.summary}</p>` : ""}
+              ${safeSummary ? `<p class="mt-1 text-xs text-surface-muted-foreground">${safeSummary}</p>` : ""}
             </div>
           `);
         setHoveredNode(d);
