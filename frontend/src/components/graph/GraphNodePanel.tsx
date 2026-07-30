@@ -2,6 +2,8 @@
 
 import { X, ExternalLink, ChevronRight } from "lucide-react";
 import type { GraphNode, GraphEdge } from "@/lib/api";
+import ConfidenceBadge from "@/components/ui/ConfidenceBadge";
+import SourceLink from "@/components/ui/SourceLink";
 
 interface GraphNodePanelProps {
   node: GraphNode;
@@ -9,6 +11,15 @@ interface GraphNodePanelProps {
   onClose: () => void;
   onExploreGraph: (nodeId: string) => void;
 }
+
+const TYPE_LABELS: Record<string, string> = {
+  person: "人物",
+  entity: "实体",
+  concept: "概念",
+  technology: "技术",
+  event: "事件",
+  organization: "组织",
+};
 
 export default function GraphNodePanel({
   node,
@@ -20,21 +31,6 @@ export default function GraphNodePanel({
     (e) => e.source === node.id || e.target === node.id
   );
 
-  const confidenceLabel = (c: number) => {
-    if (c >= 0.8) return { label: "高", color: "text-success" };
-    if (c >= 0.5) return { label: "中", color: "text-warning" };
-    return { label: "低", color: "text-destructive" };
-  };
-
-  const typeLabels: Record<string, string> = {
-    person: "人物",
-    entity: "实体",
-    concept: "概念",
-    technology: "技术",
-    event: "事件",
-    organization: "组织",
-  };
-
   return (
     <div className="w-full lg:w-80 bg-surface-card border-l border-border-default overflow-y-auto">
       {/* Header */}
@@ -44,37 +40,36 @@ export default function GraphNodePanel({
             {node.label || node.id}
           </h2>
           <span className="inline-block mt-1 text-xs px-1.5 py-0.5 rounded bg-surface-muted text-surface-muted-foreground">
-            {typeLabels[node.type] || node.type}
+            {TYPE_LABELS[node.type] || node.type}
           </span>
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded-md text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted transition-colors cursor-pointer"
-          aria-label="关闭详情面板"
+          className="p-1 rounded-md text-surface-muted-foreground hover:text-surface-foreground transition-colors cursor-pointer"
+          aria-label="关闭"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Confidence and source */}
-      <div className="px-4 py-3 border-b border-border-default">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-surface-muted-foreground">置信度:</span>
-          <span className={`font-medium ${confidenceLabel(node.confidence).color}`}>
-            {confidenceLabel(node.confidence).label}
-          </span>
-          <span className="text-xs text-surface-muted-foreground">
-            ({Math.round(node.confidence * 100)}%)
-          </span>
+      {/* Confidence + Source */}
+      <div className="px-4 py-3 border-b border-border-default space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-surface-muted-foreground">置信度:</span>
+          <ConfidenceBadge confidence={node.confidence} />
         </div>
+        {/* Source links from edges */}
+        {nodeEdges.slice(0, 3).map((edge, i) =>
+          edge.source_url ? (
+            <SourceLink key={i} url={edge.source_url} name={edge.type} evidence={edge.evidence} />
+          ) : null
+        )}
       </div>
 
       {/* Summary */}
       {node.summary && (
         <div className="px-4 py-3 border-b border-border-default">
-          <p className="text-sm text-surface-foreground leading-relaxed">
-            {node.summary}
-          </p>
+          <p className="text-sm text-surface-foreground leading-relaxed">{node.summary}</p>
         </div>
       )}
 
@@ -88,20 +83,16 @@ export default function GraphNodePanel({
         ) : (
           <div className="space-y-1.5">
             {nodeEdges.slice(0, 10).map((edge, i) => {
-              const relatedId =
-                edge.source === node.id ? edge.target : edge.source;
+              const relatedId = edge.source === node.id ? edge.target : edge.source;
               return (
                 <div
                   key={i}
                   className="flex items-center gap-2 text-sm p-2 rounded-lg hover:bg-surface-muted transition-colors"
                 >
-                  <span className="text-surface-muted-foreground text-xs">
-                    {edge.type}
-                  </span>
-                  <ChevronRight className="w-3 h-3 text-surface-muted-foreground" />
-                  <span className="font-medium text-surface-foreground">
-                    {relatedId}
-                  </span>
+                  <span className="text-surface-muted-foreground text-xs">{edge.type}</span>
+                  <ChevronRight className="w-3 h-3 text-surface-muted-foreground shrink-0" />
+                  <span className="font-medium text-surface-foreground truncate">{relatedId}</span>
+                  <ConfidenceBadge confidence={edge.confidence} />
                 </div>
               );
             })}

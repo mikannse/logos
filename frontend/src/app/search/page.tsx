@@ -8,6 +8,7 @@ import GraphSkeleton from "@/components/graph/GraphSkeleton";
 import GraphNodePanel from "@/components/graph/GraphNodePanel";
 import GraphLegend from "@/components/graph/GraphLegend";
 import TimelineCompact from "@/components/timeline/TimelineCompact";
+import BreadcrumbNav from "@/components/layout/BreadcrumbNav";
 import EmptyState from "@/components/ui/EmptyState";
 import DisambiguationDialog, {
   DisambiguationItem,
@@ -44,6 +45,9 @@ function SearchContent() {
   const [fuzzyResults, setFuzzyResults] = useState<any[]>([]);
   const [hasNoResults, setHasNoResults] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+
+  // Breadcrumb state (recursive exploration)
+  const [breadcrumb, setBreadcrumb] = useState<Array<{ id: string; label: string; type?: string }>>([]);
 
   // Fetch graph data
   useEffect(() => {
@@ -127,10 +131,16 @@ function SearchContent() {
   }, []);
 
   const handleExploreGraph = useCallback((nodeId: string) => {
+    // Add current entity to breadcrumb before switching
+    setBreadcrumb((prev) => {
+      const next = [...prev, { id: entityId, label: entityLabel || entityId }];
+      // Max depth: 3 layers
+      return next.length > 3 ? next.slice(-3) : next;
+    });
     setSelectedNode(null);
     setEntityId(nodeId);
     setEntityLabel(nodeId);
-  }, []);
+  }, [entityId, entityLabel]);
 
   const navigateToFuzzy = (id: string, label: string) => {
     setEntityId(id);
@@ -142,6 +152,16 @@ function SearchContent() {
   const handleYearChange = useCallback((year: number | null) => {
     // Future: filter graph by year
   }, []);
+
+  const handleBreadcrumbNavigate = useCallback(
+    (item: { id: string; label: string }, index: number) => {
+      setBreadcrumb((prev) => prev.slice(0, index));
+      setEntityId(item.id);
+      setEntityLabel(item.label);
+      setSelectedNode(null);
+    },
+    []
+  );
 
   const displayTitle = name || entityLabel || query;
 
@@ -209,6 +229,13 @@ function SearchContent() {
         )}
         {error && <p className="text-sm text-destructive mt-1">{error}</p>}
       </div>
+
+      {/* Breadcrumb navigation */}
+      {breadcrumb.length > 0 && (
+        <div className="w-full max-w-7xl mx-auto px-4 pb-1">
+          <BreadcrumbNav items={breadcrumb} onNavigate={handleBreadcrumbNavigate} />
+        </div>
+      )}
 
       {/* Main graph + detail panel layout */}
       <div className="flex-1 flex flex-col lg:flex-row gap-3 px-4 pb-3 max-w-7xl mx-auto w-full">
