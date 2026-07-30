@@ -38,7 +38,7 @@ def validate_endpoint(url: str) -> str:
 
     for _, _, _, _, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_reserved or ip.is_multicast:
             raise HTTPException(
                 status_code=400,
                 detail=f"不允许的端点地址（内网地址已被拦截）",
