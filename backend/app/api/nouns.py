@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Query
 
 from app.models.noun import (
@@ -6,10 +8,12 @@ from app.models.noun import (
     DisambiguationGroup,
 )
 from app.services.search_service import SearchService
+from app.services.graph_service import GraphBuilder
 
 router = APIRouter(tags=["nouns"])
 
 _search_service: SearchService | None = None
+_graph_builder: GraphBuilder | None = None
 
 
 def get_search_service() -> SearchService:
@@ -19,21 +23,34 @@ def get_search_service() -> SearchService:
     return _search_service
 
 
+def get_graph_builder() -> GraphBuilder:
+    global _graph_builder
+    if _graph_builder is None:
+        _graph_builder = GraphBuilder()
+    return _graph_builder
+
+
 @router.get("/nouns", response_model=NounSearchResponse)
 async def search_nouns(
     q: str = Query(..., min_length=2, max_length=200, description="搜索名词"),
     lang: str = Query(default="zh", description="语言 (zh/en)"),
+    build: bool = Query(default=False, description="无结果时是否触发冷启动构建"),
 ):
-    """名词搜索（含消歧）
+    """名词搜索（含消歧 + 冷启动）
 
     搜索流程：
     1. 精确匹配 Neo4j 缓存
     2. 未命中 → Wikidata API 查询（跨语言对齐，实体去重）
-    3. 结果写入 Neo4j + Redis 缓存
+    3. 设置 ?build=true 时无结果自动触发后台冷启动构建
     4. 多义检测：如果返回多个不同实体，标记 needs_disambiguation=True
     """
     service = get_search_service()
     result = await service.search(q, language=lang)
+
+    # Trigger cold-start build if no results and build flag is set
+    if build and len(result.get("results", [])) == 0:
+        builder = get_graph_builder()
+        asyncio.create_task(builder.build_graph(q, lang))
 
     return NounSearchResponse(
         results=[

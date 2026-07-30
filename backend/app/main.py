@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.nouns import router as nouns_router
 from app.api.graph import router as graph_router
 from app.api.timeline import router as timeline_router
+from app.api.sse import router as sse_router
 
 app = FastAPI(
     title="Logos API",
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(nouns_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(timeline_router, prefix="/api")
+app.include_router(sse_router, prefix="/api")
 
 
 @app.get("/api/health")
