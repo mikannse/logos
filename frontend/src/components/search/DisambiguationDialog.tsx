@@ -17,12 +17,14 @@ interface DisambiguationDialogProps {
   query: string;
   items: DisambiguationItem[];
   onClose: () => void;
+  onSelect?: (item: DisambiguationItem) => void;
 }
 
 export default function DisambiguationDialog({
   query,
   items,
   onClose,
+  onSelect,
 }: DisambiguationDialogProps) {
   const router = useRouter();
   const [selectedIndex, setSelectedIndex] = React.useState(0);
@@ -30,10 +32,11 @@ export default function DisambiguationDialog({
 
   const handleSelect = useCallback(
     (item: DisambiguationItem) => {
-      // Navigate to the entity using its Wikidata ID
+      onClose(); // Close dialog before navigating
+      onSelect?.(item); // Let parent handle if needed
       router.push(`/search?q=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.label)}`);
     },
-    [router]
+    [router, onClose, onSelect]
   );
 
   const handleEsc = useCallback(

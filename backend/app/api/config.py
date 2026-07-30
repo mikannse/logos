@@ -4,6 +4,8 @@
 配置存储在 Redis 中，运行时生效。
 """
 
+import ipaddress
+import socket
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
@@ -16,33 +18,30 @@ router = APIRouter(tags=["config"])
 
 _config_service: ConfigService | None = None
 
-# 禁止作为 LLM 端点的内网/保留地址段
-BLOCKED_HOSTS = [
-    "127.0.0.1", "127.0.0.0", "localhost", "::1",
-    "10.", "172.16.", "172.17.", "172.18.", "172.19.",
-    "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
-    "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-    "172.30.", "172.31.", "192.168.", "169.254.",
-    "0.0.0.0", "metadata.google.internal",
-]
-
 
 def validate_endpoint(url: str) -> str:
-    """验证 LLM 端点 URL 安全性和格式"""
+    """通过 DNS 解析验证 LLM 端点安全性"""
     parsed = urlparse(url)
 
-    if not parsed.scheme:
-        raise HTTPException(status_code=400, detail="端点地址缺少协议头 (https://)")
-
     if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="不支持的协议，仅支持 http/https")
+        raise HTTPException(status_code=400, detail="仅支持 http/https 协议")
 
     host = parsed.hostname or parsed.netloc
-    for blocked in BLOCKED_HOSTS:
-        if host.startswith(blocked):
+    if not host:
+        raise HTTPException(status_code=400, detail="端点地址缺少主机名")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port)
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"无法解析主机: {host}")
+
+    for _, _, _, _, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
             raise HTTPException(
                 status_code=400,
-                detail=f"不允许的端点地址: {url}（内网地址已被拦截）",
+                detail=f"不允许的端点地址（内网地址已被拦截）",
             )
 
     return url
@@ -115,6 +114,7 @@ async def test_llm_connection(body: LLMConfigUpdate, request: Request):
 
     用提供的配置发一条简单的模型请求检查连通性。
     """
+    import httpx
     from openai import OpenAI
 
     # Validate endpoint security before making request
@@ -124,6 +124,7 @@ async def test_llm_connection(body: LLMConfigUpdate, request: Request):
         client = OpenAI(
             api_key=body.api_key,
             base_url=body.endpoint,
+            http_client=httpx.Client(follow_redirects=False),
         )
         response = client.chat.completions.create(
             model=body.model,

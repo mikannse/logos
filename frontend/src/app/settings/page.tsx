@@ -20,6 +20,12 @@ const PRESETS = [
     provider: "anthropic",
   },
   {
+    label: "DeepSeek V4",
+    endpoint: "https://api.deepseek.com",
+    model: "deepseek-v4-pro",
+    provider: "deepseek",
+  },
+  {
     label: "LiteLLM Proxy",
     endpoint: "http://localhost:4000/v1",
     model: "gpt-4o-mini",
