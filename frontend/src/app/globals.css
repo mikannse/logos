@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -15,6 +16,16 @@
   --color-destructive: #DC2626;
   --color-success: #16A34A;
   --color-warning: #D97706;
+  --color-ring: #475569;
+
+  /* Spacing Tokens */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
 
   /* Border Radius */
   --radius-sm: 4px;
@@ -23,9 +34,11 @@
   --radius-xl: 16px;
 
   /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-modal: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 }
 
 .dark {
@@ -42,10 +55,13 @@
   --color-destructive: #F87171;
   --color-success: #4ADE80;
   --color-warning: #FBBF24;
+  --color-ring: #818CF8;
 
+  --shadow-sm: none;
   --shadow-card: none;
   --shadow-elevated: 0 0 0 1px rgb(255 255 255 / 0.05);
   --shadow-modal: 0 0 0 1px rgb(255 255 255 / 0.1), 0 25px 50px -12px rgb(0 0 0 / 0.5);
+  --shadow-xl: 0 0 0 1px rgb(255 255 255 / 0.08), 0 25px 50px -12px rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
@@ -62,15 +78,28 @@
   --color-destructive: var(--color-destructive);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
+  --color-ring: var(--color-ring);
 
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Work Sans', system-ui, sans-serif;
+  --font-heading: 'Outfit', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 body {
   background: var(--color-background);
   color: var(--color-foreground);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Work Sans', system-ui, sans-serif;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+/* Focus ring for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* Scrollbar styling */
