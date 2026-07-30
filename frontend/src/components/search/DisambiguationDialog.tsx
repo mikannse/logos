@@ -3,6 +3,7 @@
 import React, { useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { FileQuestion } from "lucide-react";
+import { CONFIDENCE_LEVELS } from "@/lib/constants";
 
 export interface DisambiguationItem {
   id: string;
@@ -32,8 +33,11 @@ export default function DisambiguationDialog({
 
   const handleSelect = useCallback(
     (item: DisambiguationItem) => {
-      onClose(); // Close dialog before navigating
-      onSelect?.(item); // Let parent handle if needed
+      onClose();
+      if (onSelect) {
+        onSelect(item); // parent takes full control
+        return;
+      }
       router.push(`/search?q=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.label)}`);
     },
     [router, onClose, onSelect]
@@ -76,8 +80,8 @@ export default function DisambiguationDialog({
   }, [selectedIndex]);
 
   const confidenceColor = (c: number) => {
-    if (c >= 0.8) return "text-success";
-    if (c >= 0.5) return "text-warning";
+    if (c >= CONFIDENCE_LEVELS.HIGH.min) return "text-success";
+    if (c >= CONFIDENCE_LEVELS.MEDIUM.min) return "text-warning";
     return "text-destructive";
   };
 

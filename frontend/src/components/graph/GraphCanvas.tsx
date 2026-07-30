@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as d3 from "d3";
 import type { GraphNode, GraphEdge } from "@/lib/api";
+import { CONFIDENCE_LEVELS } from "@/lib/constants";
 
 interface GraphCanvasProps {
   centerId: string;
@@ -223,7 +224,11 @@ export default function GraphCanvas({
         const safeLabel = escapeHtml(d.label);
         const safeType = escapeHtml(d.type);
         const safeSummary = d.summary ? escapeHtml(d.summary) : "";
-        const confClass = d.confidence >= 0.8 ? 'text-success' : d.confidence >= 0.5 ? 'text-warning' : 'text-destructive';
+        const confClass = d.confidence >= CONFIDENCE_LEVELS.HIGH.min
+          ? 'text-success'
+          : d.confidence >= CONFIDENCE_LEVELS.MEDIUM.min
+            ? 'text-warning'
+            : 'text-destructive';
 
         tooltip.style("opacity", 1)
           .style("display", "block")

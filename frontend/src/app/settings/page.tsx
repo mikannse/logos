@@ -104,13 +104,16 @@ export default function SettingsPage() {
     setIsTesting(true);
     setStatus(null);
 
+    // 如果用户当前未输入 Key 但后端有已保存的 Key，用空字符串让后端使用已存配置
+    const keyToSend = apiKey || (hasExistingKey ? "" : "test-key");
+
     try {
       const res = await fetch(`${API_BASE}/api/config/llm/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           endpoint,
-          api_key: apiKey || "test-key",
+          api_key: keyToSend,
           model,
           provider,
         }),

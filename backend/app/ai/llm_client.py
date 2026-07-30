@@ -8,11 +8,17 @@
 LiteLLM 作为后端统一网关，Instructor 做结构化提取。
 """
 
+import asyncio
 from typing import Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
 from app.services.config_service import ConfigService
+from app.core.endpoint_security import (
+    ResolvedEndpoint,
+    resolve_endpoint,
+    EndpointValidationError,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -25,6 +31,9 @@ class LLMClient:
 
     支持 LiteLLM proxy、OpenAI、Anthropic（通过 LiteLLM）、
     以及任何 OpenAI 兼容 API（vLLM、Ollama、本地模型）。
+
+    运行时每次构建 httpx.Client 时都会校验并固定 DNS，
+    防止保存后 rebinding 攻击。
     """
 
     def __init__(self, config_service: Optional[ConfigService] = None):
@@ -37,7 +46,10 @@ class LLMClient:
         self._cached_config = await self.config_service.get_llm_config()
 
     async def _get_client(self):
-        """延迟初始化 OpenAI 兼容客户端 + Instructor"""
+        """延迟初始化 OpenAI 兼容客户端 + Instructor
+
+        运行时每次都重新校验并固定 DNS 以防御 rebinding。
+        """
         await self._load_config()
         config = self._cached_config
 
@@ -47,9 +59,18 @@ class LLMClient:
         import instructor
         from openai import OpenAI
 
+        # DNS 解析 + 安全校验放线程池（阻塞操作）
+        try:
+            resolved = await asyncio.get_running_loop().run_in_executor(
+                None, resolve_endpoint, config.endpoint
+            )
+        except EndpointValidationError as e:
+            raise ValueError(f"端点安全校验失败: {e}")
+
         client = OpenAI(
             api_key=config.api_key,
-            base_url=config.endpoint,
+            base_url=resolved.safe_url,
+            http_client=resolved.make_http_client(),
         )
 
         self._client = instructor.from_openai(client)

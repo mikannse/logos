@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { CONFIDENCE_LEVELS } from "@/lib/constants";
 
 const EDGE_TYPES: Record<string, { label: string; color: string }> = {
   influence: { label: "影响", color: "#DC2626" },
@@ -21,10 +22,10 @@ const NODE_TYPES: Record<string, { label: string; color: string; shape: string }
   organization: { label: "组织", color: "#DC2626", shape: "square" },
 };
 
-const CONFIDENCE_LEVELS = [
-  { label: "高 (>80%)", style: "solid", opacity: "1" },
-  { label: "中 (50-80%)", style: "solid", opacity: "0.6" },
-  { label: "低 (<50%)", style: "dashed", opacity: "0.4" },
+const CONFIDENCE_LEGEND = [
+  { label: `${CONFIDENCE_LEVELS.HIGH.label} (>{Math.round(CONFIDENCE_LEVELS.HIGH.min * 100)}%)`, style: "solid", opacity: "1" },
+  { label: `${CONFIDENCE_LEVELS.MEDIUM.label} (${Math.round(CONFIDENCE_LEVELS.MEDIUM.min * 100)}-${Math.round(CONFIDENCE_LEVELS.HIGH.min * 100)}%)`, style: "solid", opacity: "0.6" },
+  { label: `${CONFIDENCE_LEVELS.LOW.label} (<${Math.round(CONFIDENCE_LEVELS.MEDIUM.min * 100)}%)`, style: "dashed", opacity: "0.4" },
 ];
 
 export default function GraphLegend() {
@@ -80,7 +81,7 @@ export default function GraphLegend() {
           <div>
             <p className="text-surface-muted-foreground mb-1.5">置信度</p>
             <div className="space-y-1">
-              {CONFIDENCE_LEVELS.map((cl, i) => (
+              {CONFIDENCE_LEGEND.map((cl, i) => (
                 <div key={i} className="flex items-center gap-1.5">
                   <span
                     className="inline-block h-0.5 w-4 shrink-0"
