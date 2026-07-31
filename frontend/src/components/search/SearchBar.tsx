@@ -20,10 +20,18 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(-1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const submitTimerRef = useRef<number | null>(null);
   const debouncedQuery = useDebounce(query, 200);
+
+  // 卸载时清理提交态复位定时器
+  useEffect(() => {
+    return () => {
+      if (submitTimerRef.current !== null) window.clearTimeout(submitTimerRef.current);
+    };
+  }, []);
 
   // Fetch suggestions when debounced query changes
   useEffect(() => {
@@ -35,7 +43,6 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
     }
 
     let cancelled = false;
-    setIsLoading(true);
 
     fetch(`${API_BASE}/api/nouns/suggest?q=${encodeURIComponent(trimmed)}`)
       .then((res) => res.json())
@@ -55,9 +62,6 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
       })
       .catch(() => {
         if (!cancelled) setSuggestions([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
       });
 
     return () => { cancelled = true; };
@@ -66,7 +70,10 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
   const navigateToSearch = useCallback(
     (term: string) => {
       setShowSuggestions(false);
+      setIsSubmitting(true);
       router.push(`/search?q=${encodeURIComponent(term)}`);
+      // 客户端路由导航很快，短暂显示加载态后复位，避免按钮一直转圈
+      submitTimerRef.current = window.setTimeout(() => setIsSubmitting(false), 800);
     },
     [router]
   );
@@ -122,19 +129,20 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
           }}
           onKeyDown={handleKeyDown}
           placeholder="输入名词探索..."
-          className="w-full h-12 pl-12 pr-4 bg-surface-card border border-border-default rounded-xl text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent focus:border-transparent transition-shadow duration-150"
+          className="w-full h-12 pl-12 pr-32 bg-surface-card border border-border-default rounded-xl text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent focus:border-transparent transition-shadow duration-150"
           aria-label="搜索名词"
           autoComplete="off"
           minLength={2}
         />
-        <div className="flex items-center gap-1">
+        {/* 按钮组绝对定位在输入框内部右侧，与左侧搜索图标对称 */}
+        <div className="absolute right-2 flex items-center gap-1">
           <button
             type="submit"
             disabled={query.trim().length < 2}
-            className="h-8 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
+            className="inline-flex items-center justify-center h-9 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-brand-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
             aria-label="搜索"
           >
-            {isLoading ? (
+            {isSubmitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               "搜索"
@@ -142,7 +150,7 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
           </button>
           <Link
             href="/settings"
-            className="h-8 w-8 flex items-center justify-center rounded-lg text-surface-muted-foreground hover:bg-surface-muted hover:text-surface-foreground transition-colors"
+            className="h-9 w-9 flex items-center justify-center rounded-lg text-surface-muted-foreground hover:bg-surface-muted hover:text-surface-foreground transition-colors"
             aria-label="设置"
           >
             <Settings className="w-4 h-4" />

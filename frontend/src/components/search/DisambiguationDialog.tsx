@@ -17,8 +17,12 @@ export interface DisambiguationItem {
 interface DisambiguationDialogProps {
   query: string;
   items: DisambiguationItem[];
+  /** 关闭（选择时也会调用，仅负责隐藏弹窗） */
   onClose: () => void;
+  /** 用户显式选择某个实体（parent 接管导航） */
   onSelect?: (item: DisambiguationItem) => void;
+  /** 用户忽略弹窗（Esc / 点击背板 / 取消），与"选择"区分 */
+  onDismiss?: () => void;
 }
 
 export default function DisambiguationDialog({
@@ -26,10 +30,17 @@ export default function DisambiguationDialog({
   items,
   onClose,
   onSelect,
+  onDismiss,
 }: DisambiguationDialogProps) {
   const router = useRouter();
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // 忽略弹窗：先关闭，再通知 parent（parent 决定是否默认选中第一个结果）
+  const handleDismiss = useCallback(() => {
+    onClose();
+    onDismiss?.();
+  }, [onClose, onDismiss]);
 
   const handleSelect = useCallback(
     (item: DisambiguationItem) => {
@@ -45,7 +56,7 @@ export default function DisambiguationDialog({
 
   const handleEsc = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleDismiss();
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex((prev) => Math.min(prev + 1, items.length - 1));
@@ -61,7 +72,7 @@ export default function DisambiguationDialog({
         }
       }
     },
-    [onClose, items, selectedIndex, handleSelect]
+    [handleDismiss, items, selectedIndex, handleSelect]
   );
 
   useEffect(() => {
@@ -89,7 +100,7 @@ export default function DisambiguationDialog({
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm p-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleDismiss();
       }}
       role="dialog"
       aria-modal="true"
@@ -160,7 +171,7 @@ export default function DisambiguationDialog({
         <div className="px-6 py-3 border-t border-border-default flex items-center justify-between text-xs text-surface-muted-foreground">
           <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
           <button
-            onClick={onClose}
+            onClick={handleDismiss}
             className="px-3 py-1 rounded-md hover:bg-surface-muted transition-colors cursor-pointer"
           >
             取消

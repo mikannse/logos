@@ -8,25 +8,45 @@ import Skeleton from "@/components/ui/Skeleton";
 interface TimelineCompactProps {
   nounId: string;
   onYearChange?: (year: number | null) => void;
+  /** 外部提供的里程碑（历史快照视图）；非空时直接渲染，不再拉取实时数据 */
+  milestones?: Milestone[] | null;
+  /** 内部拉取完成后的回调（用于搜索快照保存） */
+  onLoaded?: (milestones: Milestone[]) => void;
 }
 
-export default function TimelineCompact({ nounId, onYearChange }: TimelineCompactProps) {
+export default function TimelineCompact({
+  nounId,
+  onYearChange,
+  milestones: externalMilestones = null,
+  onLoaded,
+}: TimelineCompactProps) {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   useEffect(() => {
+    // 外部快照模式：直接渲染，不拉取
+    if (externalMilestones) {
+      setMilestones(externalMilestones);
+      setIsLoading(false);
+      return;
+    }
+
     if (!nounId) return;
     setIsLoading(true);
 
     fetchTimeline(nounId)
       .then((data) => {
-        setMilestones(data.milestones || []);
+        const ms = data.milestones || [];
+        setMilestones(ms);
+        onLoadedRef.current?.(ms);
       })
-      .catch(() => {})
+      .catch(() => setMilestones([]))
       .finally(() => setIsLoading(false));
-  }, [nounId]);
+  }, [nounId, externalMilestones]);
 
   const handleMilestoneClick = (index: number, milestone: Milestone) => {
     setActiveIndex(index);

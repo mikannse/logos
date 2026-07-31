@@ -106,6 +106,53 @@ export interface TimelineResponse {
   total: number;
 }
 
+// ---------- 搜索历史快照（Story 4.x） ----------
+
+export interface HistoryItem {
+  noun_id: string;
+  query: string;
+  entity_name: string;
+  saved_at: string;
+}
+
+export interface HistorySnapshot {
+  exists: boolean;
+  noun_id: string;
+  query: string;
+  entity: { id: string; name: string };
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] };
+  timeline: Milestone[];
+  saved_at: string;
+}
+
+export function fetchHistoryList(): Promise<{ items: HistoryItem[]; total: number }> {
+  return request<{ items: HistoryItem[]; total: number }>("/api/history");
+}
+
+export function fetchHistorySnapshot(nounId: string): Promise<HistorySnapshot> {
+  return request<HistorySnapshot>(`/api/history/${encodeURIComponent(nounId)}`);
+}
+
+export function saveHistorySnapshot(payload: {
+  noun_id: string;
+  query: string;
+  entity: { id: string; name: string };
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] };
+  timeline: Milestone[];
+}): Promise<{ ok: boolean; noun_id: string; saved_at: string }> {
+  return request<{ ok: boolean; noun_id: string; saved_at: string }>("/api/history", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteHistorySnapshot(nounId: string): Promise<{ ok: boolean; noun_id: string; deleted: boolean }> {
+  return request<{ ok: boolean; noun_id: string; deleted: boolean }>(
+    `/api/history/${encodeURIComponent(nounId)}`,
+    { method: "DELETE" }
+  );
+}
+
 export async function searchNouns(query: string): Promise<SearchResponse> {
   return request<SearchResponse>(
     `/api/nouns?q=${encodeURIComponent(query)}`

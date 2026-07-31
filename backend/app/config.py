@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# 后端项目根目录（backend/），用于锚定默认数据目录
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -19,6 +24,9 @@ class Settings(BaseSettings):
     # 留空则直连。Wikidata/Wikipedia 在部分网络环境下需代理才能访问。
     http_proxy: str = ""
     https_proxy: str = ""
+
+    # 匿名搜索历史快照目录（JSON 文件存储，零新增依赖）
+    history_dir: str = str(BACKEND_ROOT / "data" / "history")
 
     # Logging
     log_level: str = "INFO"

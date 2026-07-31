@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, Zap } from "lucide-react";
+import { Search, Zap, History } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 
 export default function NavBar() {
@@ -49,6 +49,14 @@ export default function NavBar() {
           >
             <Search className="w-4 h-4" />
             <span className="hidden sm:inline">搜索</span>
+          </Link>
+          <Link
+            href="/history"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-surface-muted-foreground hover:text-surface-foreground transition-colors"
+            aria-label="搜索历史"
+          >
+            <History className="w-4 h-4" />
+            <span className="hidden sm:inline">历史</span>
           </Link>
           <ThemeToggle />
         </nav>

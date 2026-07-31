@@ -88,6 +88,13 @@ export default function GraphCanvas({
     const width = containerRef.current?.clientWidth || 800;
     const height = containerRef.current?.clientHeight || 600;
 
+    // 显式设置 SVG width/height 属性，建立确定的 viewport。
+    // WebKit/Safari 下纯 CSS 百分比尺寸（无 width/height 属性）的 <svg> 在调用
+    // getBBox()（初次自动适配）/ getScreenCTM()（拖拽节点）解析相对长度时会抛：
+    //   NotSupportedError: Failed to read the 'value' property from 'SVGLength':
+    //   Could not resolve relative length.
+    svg.attr("width", width).attr("height", height);
+
     // Clear previous
     svg.selectAll("*").remove();
 
@@ -265,6 +272,34 @@ export default function GraphCanvas({
       });
     });
 
+    // 布局收敛后自动居中适配：
+    // 1) 先让力导向布局运行，再基于真实布局的 bbox 计算，
+    //    避免在布局开始前用随机初始位置的错误 bbox 做适配（导致图谱偏移）。
+    // 2) 适配公式将 bbox 中心映射到视口中心（screen = user*k + x，需 cx*k + x = width/2）。
+    let fitted = false;
+    const fitToCenter = () => {
+      if (fitted) return;
+      fitted = true;
+      let bounds: SVGRect | null = null;
+      try {
+        bounds = g.node()?.getBBox() ?? null;
+      } catch {
+        bounds = null; // 测量失败（如 viewport 未就绪）时跳过，保证图谱仍能渲染
+      }
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      const scale = Math.min(
+        width / (bounds.width + 100),
+        height / (bounds.height + 100),
+        1.5
+      );
+      const transform = d3.zoomIdentity
+        .scale(scale)
+        .translate(width / scale / 2 - cx, height / scale / 2 - cy);
+      svg.transition().duration(500).call(zoom.transform, transform);
+    };
+
     // Simulation tick
     simulation.on("tick", () => {
       link
@@ -274,23 +309,14 @@ export default function GraphCanvas({
         .attr("y2", (d) => (d.target as SimNode).y || 0);
 
       node.attr("transform", (d) => `translate(${d.x || 0},${d.y || 0})`);
-    });
 
-    // Initial zoom to fit
-    const bounds = g.node()?.getBBox();
-    if (bounds) {
-      const scale = Math.min(
-        width / (bounds.width + 100),
-        height / (bounds.height + 100),
-        1.5
-      );
-      const tx = width / 2 - (bounds.x + bounds.width / 2) * scale;
-      const ty = height / 2 - (bounds.y + bounds.height / 2) * scale;
-      svg.transition().duration(500).call(
-        zoom.transform,
-        d3.zoomIdentity.translate(tx, ty).scale(scale)
-      );
-    }
+      // 布局基本稳定（alpha < 0.1）后自动居中一次；拖拽重启动时不再反复适配
+      if (!fitted && simulation.alpha() < 0.1) {
+        fitToCenter();
+      }
+    });
+    // 收敛兜底（alpha 到达 alphaMin 时）
+    simulation.on("end", fitToCenter);
 
     return () => {
       simulation.stop();

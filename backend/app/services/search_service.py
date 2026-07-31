@@ -76,6 +76,28 @@ def _has_same_identity(e1: WikidataEntity, e2: WikidataEntity) -> bool:
     return False
 
 
+def _name_close_to_query(name: str, query: str) -> bool:
+    """判断实体名称是否与查询词等同（消歧判定用）
+
+    仅当名称与查询词基本一致时视为"同名候选"：
+    - 完全相等（忽略大小写）
+    - 长度相同且仅差一个字符（容错繁简差异，如 "苹果公司" ≈ "蘋果公司"）
+
+    子串/包含关系（如 "苹果公司总部" 之于 "苹果公司"）视为附属词条，
+    不计入歧义判定，避免精确查询因伴生结果而误弹消歧。
+    """
+    q = (query or "").strip().casefold()
+    n = (name or "").strip().casefold()
+    if not q or not n:
+        return False
+    if n == q:
+        return True
+    if len(n) == len(q) and len(q) >= 2:
+        shared = sum(1 for a, b in zip(n, q) if a == b)
+        return shared >= len(q) - 1
+    return False
+
+
 class SearchService:
     """名词搜索业务逻辑"""
 
@@ -168,18 +190,9 @@ class SearchService:
                     pass
 
         # 6) Determine if disambiguation needed
-        needs_disambiguation = len(results) > 1
-        disambiguation_groups = []
-        if needs_disambiguation:
-            for entity in unique_entities:
-                disambiguation_groups.append({
-                    "id": entity.id,
-                    "label": entity.label,
-                    "label_en": self._get_en_label(entity),
-                    "type_label": _get_type_label(entity),
-                    "confidence": 0.9 if entity.sitelink_zh or entity.sitelink_en else 0.6,
-                    "summary": entity.description,
-                })
+        needs_disambiguation, disambiguation_groups = self._compute_disambiguation(
+            unique_entities, query
+        )
 
         response = {
             "results": results,
@@ -190,6 +203,32 @@ class SearchService:
         # 7) Cache
         await self.cache.set(cache_key, response, ttl=300)
         return response
+
+    def _compute_disambiguation(
+        self, entities: list[WikidataEntity], query: str
+    ) -> tuple[bool, list[dict]]:
+        """计算是否需要消歧及消歧分组
+
+        仅当 ≥2 个结果实体的名称与查询词等同（同名，可容错繁简差异）时
+        才判定为歧义，避免 "量子力学"、"apple fruit" 这类意图明确、
+        仅伴生无关结果的查询也弹出消歧选择。附属词条（"苹果公司总部"）
+        不计入歧义判定。
+        """
+        close = sum(1 for e in entities if _name_close_to_query(e.label, query))
+        needs_disambiguation = len(entities) > 1 and close > 1
+
+        groups = []
+        if needs_disambiguation:
+            for entity in entities:
+                groups.append({
+                    "id": entity.id,
+                    "label": entity.label,
+                    "label_en": self._get_en_label(entity),
+                    "type_label": _get_type_label(entity),
+                    "confidence": 0.9 if entity.sitelink_zh or entity.sitelink_en else 0.6,
+                    "summary": entity.description,
+                })
+        return needs_disambiguation, groups
 
     def _get_en_label(self, entity: WikidataEntity) -> str:
         """提取英文标签

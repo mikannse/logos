@@ -11,3 +11,6 @@ venv/
 .vscode/
 *.log
 .DS_Store
+
+# 本地数据（匿名搜索历史快照）
+backend/data/
