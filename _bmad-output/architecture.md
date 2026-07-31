@@ -113,6 +113,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | ADR-002 | Edge 数据模型粒度 | `source` + `confidence` + `evidence` **必含** | 源头可追溯是信任根基 |
 | ADR-003 | 人物独立 Label | **独立 `:Person` Label** | 人物优先原则的数据层保障 |
 | ADR-004 | 图谱缓存粒度 | **全图缓存 + 节点级增量更新混合** | 命中率 + 数据新鲜度兼得 |
+| ADR-005 | 搜索历史快照存储 | **匿名 JSON 文件存储**（`data/history/*.json` + `index.json`），快照为完整副本（图谱 + 时间轴），独立于 Redis 缓存 / Neo4j 持久化 | 匿名免费无登录，零新增依赖，可导出可删除；缓存面向实时展示，快照面向回顾 |
 
 ### Key Architectural Principles (Confirmed)
 
@@ -120,7 +121,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 2. **AI 不可见原则** — AI 仅用于数据管道内功，不暴露为用户交互界面
 3. **可追溯优先于数量** — 每条关系必须有数据来源，置信度标注不可省略
 4. **图数据库是必需品** — 多源异构数据的统一存储层，不可因 MVP 简化而省略
-5. **架构预留原则** — API 响应结构为 Phase 2（卡片快照、个人知识库）预留序列化格式
+5. **架构预留原则** — API 响应结构为 Phase 2（卡片快照、个人知识库）预留序列化格式。2026-07-31 更新：本迭代先落地为**匿名快照格式**（`data/history/*.json`），与未来登录态个人知识库共用同一序列化结构，仅差用户归属字段
 
 ---
 
