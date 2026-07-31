@@ -6,6 +6,7 @@
 - 跨语言对齐：通过 Q ID 映射中英文
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,7 +20,8 @@ WIKIDATA_ENTITY_URL = "https://www.wikidata.org/wiki/Special:EntityData"
 class WikidataEntity:
     """Wikidata 实体数据"""
     id: str               # Q ID (e.g., Q937)
-    label: str            # 显示名称
+    label: str            # 显示名称（请求语言优先，fallback 英文）
+    label_en: str         # 英文显示名称（独立提取，避免别名启发式误判）
     description: str      # 一句话描述
     type: str             # person / concept / technology / event
     aliases: list[str]    # 别名列表
@@ -51,11 +53,17 @@ def _map_wikidata_type(qid: str, instance_of: list[str]) -> str:
 class WikidataRepository:
     """Wikidata 数据源 Repository"""
 
-    def __init__(self):
+    def __init__(self, proxy: Optional[str] = None):
         headers = {
             "User-Agent": "Logos/0.1 (Knowledge Graph Explorer; contact@logos.app) httpx/0.27",
         }
-        self._client = httpx.AsyncClient(timeout=30.0, headers=headers)
+        # 显式代理支持：优先传入参数，其次读取配置（HTTPS_PROXY/HTTP_PROXY）
+        # httpx 默认也信任环境变量（trust_env），此处显式注入让 .env 配置生效
+        if proxy is None:
+            from app.config import settings
+
+            proxy = settings.https_proxy or settings.http_proxy or None
+        self._client = httpx.AsyncClient(timeout=30.0, headers=headers, proxy=proxy)
 
     async def search(
         self, query: str, language: str = "zh", limit: int = 5
@@ -86,13 +94,15 @@ class WikidataRepository:
             if "search" not in data or not data["search"]:
                 return []
 
-            entities = []
-            for item in data["search"][:limit]:
-                entity = await self._get_entity_detail(item["id"], language)
-                if entity:
-                    entities.append(entity)
-
-            return entities
+            # 并发获取详情，避免 N+1 顺序请求导致搜索延迟被放大
+            results = await asyncio.gather(
+                *[
+                    self._get_entity_detail(item["id"], language)
+                    for item in data["search"][:limit]
+                ],
+                return_exceptions=True,
+            )
+            return [r for r in results if isinstance(r, WikidataEntity)]
 
         except httpx.HTTPError as e:
             print(f"Wikidata search error: {e}")
@@ -128,6 +138,8 @@ class WikidataRepository:
                 or labels.get("en", {}).get("value")
                 or qid
             )
+            # 英文标签独立提取——用于消歧展示等场景，避免从别名猜测英文名
+            label_en = labels.get("en", {}).get("value", "")
 
             # 提取描述
             descriptions = entity_data.get("descriptions", {})
@@ -169,6 +181,7 @@ class WikidataRepository:
             return WikidataEntity(
                 id=qid,
                 label=label,
+                label_en=label_en,
                 description=description,
                 type=entity_type,
                 aliases=aliases,
@@ -185,25 +198,43 @@ class WikidataRepository:
         """通过 Q ID 获取实体（中英双语）"""
         return await self._get_entity_detail(qid, language="zh")
 
-    async def get_wikipedia_summary(self, qid: str, language: str = "zh") -> str:
-        """通过 Wikipedia API 获取摘要
+    async def get_entity_labels(self, qids: list[str], language: str = "zh") -> dict[str, str]:
+        """批量获取实体标签（轻量，仅 labels，避免拉全量 claims）
 
-        当 Wikidata 描述不够详细时，使用 Wikipedia REST API 补充。
+        Args:
+            qids: Q ID 列表
+            language: 优先语言
+
+        Returns:
+            {qid: label} 映射（缺失的实体不在结果中）
         """
-        lang_map = {"zh": "zh", "en": "en"}
-        lang = lang_map.get(language, "zh")
-        url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{qid}"
-
+        if not qids:
+            return {}
+        params = {
+            "action": "wbgetentities",
+            "ids": "|".join(qids),
+            "props": "labels",
+            "languages": f"{language}|en",
+            "format": "json",
+        }
         try:
-            response = await self._client.get(
-                url.replace(f"/{qid}", f"/Q{qid}" if not qid.startswith("Q") else f"/{qid}"),
-                follow_redirects=True,
-            )
-            # Wikipedia API uses titles, not QIDs, so need entity label first
-            # Fallback: use Wikidata sitelink
-            return ""
-        except httpx.HTTPError:
-            return ""
+            response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+            result = {}
+            for qid, entity_data in data.get("entities", {}).items():
+                labels = entity_data.get("labels", {})
+                label = (
+                    labels.get(language, {}).get("value")
+                    or labels.get("en", {}).get("value")
+                    or ""
+                )
+                if label:
+                    result[qid] = label
+            return result
+        except httpx.HTTPError as e:
+            print(f"Wikidata label batch error: {e}")
+            return {}
 
     async def close(self):
         await self._client.aclose()

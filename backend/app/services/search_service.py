@@ -30,7 +30,7 @@ TYPE_LABEL_MAP = {
     "Q6256": "国家",
     "Q515": "城市",
     "Q43229": "组织",
-    "Q101352": "编程语言家族",
+    "Q101352": "姓氏",
     "Q21199": "计算机程序",
     "Q7889": "电子游戏",
 }
@@ -192,8 +192,14 @@ class SearchService:
         return response
 
     def _get_en_label(self, entity: WikidataEntity) -> str:
-        """从 Wikidata 响应中提取英文标签"""
-        # We store aliases which may include English names
+        """提取英文标签
+
+        优先使用 Wikidata 的正式英文 label（labels.en），
+        仅在缺失时降级到别名启发式（首个全 ASCII 别名）。
+        避免 "A. Einsten" 这类缩写别名被误当英文名。
+        """
+        if entity.label_en:
+            return entity.label_en
         for alias in entity.aliases:
             # Simple heuristic: if alias contains only ASCII, likely English
             if alias and all(ord(c) < 128 for c in alias):
@@ -209,6 +215,7 @@ class SearchService:
             "confidence": 0.9 if entity.sitelink_zh or entity.sitelink_en else 0.6,
             "summary": entity.description,
             "aliases": entity.aliases[:5] if entity.aliases else [],
+            "label_en": entity.label_en,
             "wiki_url_zh": entity.sitelink_zh,
             "wiki_url_en": entity.sitelink_en,
         }

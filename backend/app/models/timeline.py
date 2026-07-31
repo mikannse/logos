@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class Milestone(BaseModel):
     year: int
-    title: str = Field(max_length=20)
+    title: str = Field(max_length=50)
     description: str
     source_url: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)

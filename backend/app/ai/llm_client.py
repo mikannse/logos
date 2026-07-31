@@ -1,11 +1,13 @@
-"""LLM 统一客户端（LiteLLM + Instructor 封装）
+"""LLM 统一客户端（OpenAI 兼容协议 + Instructor 封装）
 
 支持通过前端配置动态设置：
-- 端点 (endpoint): 任意 OpenAI 兼容 API
+- 端点 (endpoint): 任意 OpenAI 兼容 API（OpenAI/DeepSeek/Ollama/vLLM/OpenRouter 等），
+  或自托管 LiteLLM AI 网关地址（http://localhost:4000/v1，用于接入 Anthropic 等
+  非 OpenAI 兼容厂商）
 - API Key
 - 模型名称
 
-LiteLLM 作为后端统一网关，Instructor 做结构化提取。
+Instructor 做结构化提取。
 """
 
 import asyncio
@@ -29,8 +31,9 @@ class LLMClient:
     从 ConfigService 读取运行时的 LLM 配置（端点/Key/模型），
     通过 OpenAI 兼容客户端 + Instructor 调用任意 LLM。
 
-    支持 LiteLLM proxy、OpenAI、Anthropic（通过 LiteLLM）、
-    以及任何 OpenAI 兼容 API（vLLM、Ollama、本地模型）。
+    支持任何 OpenAI 兼容 API（OpenAI、DeepSeek、Ollama、vLLM、OpenRouter 等）。
+    如需接入 Anthropic 等非 OpenAI 兼容厂商，在外部部署 LiteLLM AI 网关，
+    并将 endpoint 指向网关地址（如 http://localhost:4000/v1）。
 
     运行时每次构建 httpx.Client 时都会校验并固定 DNS，
     防止保存后 rebinding 攻击。
@@ -40,6 +43,7 @@ class LLMClient:
         self.config_service = config_service or ConfigService()
         self._cached_config = None
         self._client = None
+        self._http_client = None
 
     async def _load_config(self):
         """加载最新配置"""
@@ -67,11 +71,20 @@ class LLMClient:
         except EndpointValidationError as e:
             raise ValueError(f"端点安全校验失败: {e}")
 
+        http_client = resolved.make_http_client()
         client = OpenAI(
             api_key=config.api_key,
             base_url=resolved.safe_url,
-            http_client=resolved.make_http_client(),
+            http_client=http_client,
         )
+
+        # 替换旧客户端前关闭之前的 httpx.Client，避免连接池泄漏
+        if self._http_client is not None:
+            try:
+                self._http_client.close()
+            except Exception:
+                pass
+        self._http_client = http_client
 
         self._client = instructor.from_openai(client)
         return self._client, config.model
@@ -95,7 +108,9 @@ class LLMClient:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": text})
 
-            response = client.chat.completions.create(
+            # 同步 OpenAI 调用放到线程池，避免阻塞事件循环
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
                 model=model_name,
                 response_model=response_model,
                 messages=messages,
@@ -115,7 +130,9 @@ class LLMClient:
         """生成文本摘要"""
         try:
             client, model_name = await self._get_client()
-            response = client.chat.completions.create(
+            # 同步 OpenAI 调用放到线程池，避免阻塞事件循环
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
                 model=model_name,
                 messages=[
                     {
@@ -135,7 +152,9 @@ class LLMClient:
         try:
             client, default_model = await self._get_client()
             model_name = model or default_model
-            response = client.chat.completions.create(
+            # 同步 OpenAI 调用放到线程池，避免阻塞事件循环
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
                 model=model_name,
                 messages=messages,
                 max_tokens=max_tokens,

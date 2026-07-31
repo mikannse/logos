@@ -57,26 +57,36 @@ function SearchContent() {
       return;
     }
 
+    let cancelled = false;
     setIsGraphLoading(true);
     setError(null);
     setSelectedNode(null);
 
     fetchGraph(entityId, 1)
       .then((data) => {
+        if (cancelled) return;
         setGraphNodes(data.nodes || []);
         setGraphEdges(data.edges || []);
       })
       .catch((err) => {
+        if (cancelled) return;
         setError("加载图谱失败: " + (err instanceof Error ? err.message : "未知错误"));
       })
-      .finally(() => setIsGraphLoading(false));
+      .finally(() => {
+        if (!cancelled) setIsGraphLoading(false);
+      });
+
+    // 快速探索时取消过期请求，防止旧响应覆盖新实体图谱
+    return () => { cancelled = true; };
   }, [entityId]);
 
   // Search + disambiguation
   useEffect(() => {
     if (!query) return;
 
-    if (query.startsWith("Q")) {
+    // 仅当查询是真正的 Wikidata QID（Q + 数字）时才按实体 ID 处理，
+    // 避免 "Quantum"、"Quran" 等普通英文词被误判跳过搜索
+    if (/^Q[1-9]\d*$/.test(query)) {
       setEntityId(query);
       setEntityLabel(name || query);
       return;
@@ -91,7 +101,7 @@ function SearchContent() {
     setGraphEdges([]);
 
     searchNouns(query)
-      .then((data: any) => {
+      .then(async (data: any) => {
         if (cancelled) return;
 
         if (data.needs_disambiguation && data.disambiguation_groups?.length > 0) {
@@ -104,14 +114,13 @@ function SearchContent() {
           const first = data.results[0];
           setEntityId(first.id);
           setEntityLabel(first.name);
-          return null;
+          return; // 命中结果直接结束，避免误触发 hasNoResults
         }
 
-        return fetch(
+        const res = await fetch(
           `${API_BASE}/api/nouns/fuzzy?q=${encodeURIComponent(query)}`
-        ).then((r) => r.json());
-      })
-      .then((fuzzy: any) => {
+        );
+        const fuzzy = await res.json();
         if (cancelled) return;
         if (fuzzy?.results?.length > 0) setFuzzyResults(fuzzy.results);
         else setHasNoResults(true);

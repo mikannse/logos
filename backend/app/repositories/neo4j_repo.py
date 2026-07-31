@@ -6,9 +6,13 @@
 - 属性: camelCase (`entityName`)
 """
 
+import re
 from typing import Any, Optional
 
 from app.core.neo4j_client import Neo4jClient
+
+# 关系类型会直接拼入 Cypher（关系类型无法参数化），严格白名单校验
+_VALID_REL_TYPE = re.compile(r"^[A-Z_]{1,64}$")
 
 
 class Neo4jRepository:
@@ -62,12 +66,15 @@ class Neo4jRepository:
     ) -> dict[str, Any]:
         """获取实体关联图谱
 
+        从中心实体出发遍历 1..depth 跳路径，汇总路径上的全部节点与边。
+        节点按 entityId 去重，边按 (source, target, type) 去重。
+
         Args:
             entity_id: 实体 ID
             depth: 关联深度（1-3）
 
         Returns:
-            {nodes: [...], edges: [...]}
+            {nodes: [...], edges: [...], has_more: bool}
         """
         try:
             driver = await self._driver
@@ -75,14 +82,59 @@ class Neo4jRepository:
                 query = f"""
                 MATCH path = (center:Entity {{entityId: $entity_id}})
                 -[r*1..{depth}]-(related)
-                RETURN center, related, r
+                RETURN path
                 LIMIT 200
                 """
                 result = await session.run(query, entity_id=entity_id)
-                # TODO: Implement proper result parsing
-                return {"nodes": [], "edges": []}
+                records = await result.fetch(200)
+
+                node_map: dict[str, dict] = {}
+                seen_edges: set[tuple] = set()
+                edges: list[dict] = []
+
+                for rec in records:
+                    path = rec["path"]
+                    for node in path.nodes:
+                        props = dict(node.items())
+                        eid = props.get("entityId")
+                        if not eid:
+                            continue
+                        if eid not in node_map:
+                            node_map[eid] = {
+                                "id": eid,
+                                "label": props.get("entityName", "") or "",
+                                "type": props.get("entityType", "entity") or "entity",
+                                "confidence": props.get("confidence", 0.0),
+                                "summary": props.get("summary", "") or "",
+                            }
+                    for rel in path.relationships:
+                        start = dict(rel.start_node.items())
+                        end = dict(rel.end_node.items())
+                        src = start.get("entityId", "")
+                        dst = end.get("entityId", "")
+                        if not src or not dst:
+                            continue
+                        rel_type = (rel.type or "RELATED").lower().replace("_", " ")
+                        key = (src, dst, rel_type)
+                        if key in seen_edges:
+                            continue
+                        seen_edges.add(key)
+                        edges.append({
+                            "source": src,
+                            "target": dst,
+                            "type": rel_type,
+                            "confidence": rel.get("confidence", 0.0),
+                            "source_url": rel.get("source", "") or "",
+                            "evidence": rel.get("evidence", "") or "",
+                        })
+
+                return {
+                    "nodes": list(node_map.values()),
+                    "edges": edges,
+                    "has_more": len(records) >= 200,
+                }
         except Exception:
-            return {"nodes": [], "edges": []}
+            return {"nodes": [], "edges": [], "has_more": False}
 
     async def get_timeline(self, entity_id: str) -> list[dict]:
         """获取实体演化时间轴"""
@@ -135,10 +187,14 @@ class Neo4jRepository:
             source_url: 数据来源
             evidence: 证据
         """
+        # 白名单校验：非法关系类型直接拒绝，避免 Cypher 注入
+        if not _VALID_REL_TYPE.match(rel_type or ""):
+            return False
+
         try:
             driver = await self._driver
             async with driver.session() as session:
-                await session.run(
+                result = await session.run(
                     f"""
                     MATCH (a:Entity {{entityId: $source_id}})
                     MATCH (b:Entity {{entityId: $target_id}})
@@ -147,6 +203,7 @@ class Neo4jRepository:
                         r.source = $source_url,
                         r.evidence = $evidence,
                         r.updatedAt = timestamp()
+                    RETURN count(a) AS found
                     """,
                     source_id=source_id,
                     target_id=target_id,
@@ -154,7 +211,9 @@ class Neo4jRepository:
                     source_url=source_url,
                     evidence=evidence,
                 )
-                return True
+                # 端点实体不存在时 MATCH 无行，MERGE 为 no-op —— 返回真实结果而非假成功
+                record = await result.single()
+                return bool(record and record["found"] > 0)
         except Exception:
             return False
 

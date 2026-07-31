@@ -105,11 +105,15 @@ async def test_llm_connection(body: LLMConfigUpdate):
         None, _resolve_and_raise, body.endpoint
     )
 
-    # 若前端未传 Key（用户已保存过），回退到 Redis 中已存储的 Key
+    # 若前端未传 Key（用户已保存过），仅在待测端点与已保存端点一致时才复用已存 Key，
+    # 防止对攻击者可控的任意端点泄露已存储的 API Key（凭据外泄）。
     api_key = body.api_key
     if not api_key:
         saved = await get_config_service().get_llm_config()
-        api_key = saved.api_key
+        if saved.endpoint.rstrip("/") == body.endpoint.rstrip("/"):
+            api_key = saved.api_key
+        else:
+            api_key = "test-invalid-key"
 
     try:
         http_client = resolved.make_http_client()
@@ -119,7 +123,9 @@ async def test_llm_connection(body: LLMConfigUpdate):
                 base_url=resolved.safe_url,
                 http_client=http_client,
             )
-            response = client.chat.completions.create(
+            # 同步 OpenAI 调用放到线程池，避免阻塞事件循环
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
                 model=body.model,
                 messages=[{"role": "user", "content": "Reply with just: ok"}],
                 max_tokens=10,

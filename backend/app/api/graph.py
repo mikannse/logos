@@ -46,6 +46,7 @@ def _entity_to_node(entity_id: str | None, label: str | None, entity_type: str |
     return {
         "id": entity_id,
         "name": name,
+        "label": name,  # GraphNode 使用 label 字段
         "type": entity_type or "entity",
         "confidence": 0.9 if has_sitelink else 0.6,
         "summary": description or "",
@@ -79,9 +80,16 @@ def _extract_related_qids(claims: dict, exclude_id: str) -> list[str]:
 
 def _build_response(center: str, data: dict, depth: int) -> GraphResponse:
     """统一的 GraphResponse 构造"""
+    nodes = []
+    for n in data.get("nodes", []):
+        n = dict(n)
+        # 兼容旧缓存：旧格式只有 name 键，无 label
+        if "label" not in n:
+            n["label"] = n.pop("name", n.get("id", ""))
+        nodes.append(GraphNode(**n))
     return GraphResponse(
         center=center,
-        nodes=[GraphNode(**n) for n in data.get("nodes", [])],
+        nodes=nodes,
         edges=[GraphEdge(**e) for e in data.get("edges", [])],
         depth=depth,
         has_more=data.get("has_more", False),

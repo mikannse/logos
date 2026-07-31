@@ -88,13 +88,21 @@ export default function SettingsPage() {
         body: JSON.stringify({ endpoint, api_key: apiKey, model, provider }),
       });
 
-      if (!res.ok) throw new Error("保存失败");
+      if (!res.ok) {
+        // 透出后端校验 detail（如 "端口号无效"），避免误导用户检查服务是否运行
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { detail?: string })?.detail || "保存失败");
+      }
 
       setStatus({ type: "success", message: "配置已保存！" });
       setHasExistingKey(true);
       setApiKey(""); // Clear key field after save
-    } catch {
-      setStatus({ type: "error", message: "保存失败，请检查后端服务是否运行" });
+    } catch (err) {
+      setStatus({
+        type: "error",
+        message:
+          err instanceof Error ? err.message : "保存失败，请检查后端服务是否运行",
+      });
     } finally {
       setIsSaving(false);
     }

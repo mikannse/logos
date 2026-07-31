@@ -18,11 +18,16 @@ export default function SourceLink({ url, name, evidence }: SourceLinkProps) {
     );
   }
 
-  const displayName =
-    name ||
-    (url
-      ? new URL(url).hostname.replace("www.", "").split(".")[0]
-      : "未知来源");
+  const displayName = (() => {
+    if (name) return name;
+    if (!url) return "未知来源";
+    try {
+      return new URL(url).hostname.replace("www.", "").split(".")[0];
+    } catch {
+      // 畸形 URL 不应使渲染崩溃
+      return "未知来源";
+    }
+  })();
 
   return (
     <span className="inline-flex items-center gap-1">

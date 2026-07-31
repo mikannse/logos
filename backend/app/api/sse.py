@@ -10,18 +10,14 @@ import json
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from app.services.graph_service import GraphBuilder
+from app.services.graph_service import GraphBuilder, get_default_builder
 
 router = APIRouter(tags=["events"])
 
-_graph_builder: GraphBuilder | None = None
-
 
 def get_graph_builder() -> GraphBuilder:
-    global _graph_builder
-    if _graph_builder is None:
-        _graph_builder = GraphBuilder()
-    return _graph_builder
+    # 与 nouns 路由共用同一全局单例，确保冷启动构建的 SSE 事件可被读取
+    return get_default_builder()
 
 
 @router.get("/events/graph-updates")

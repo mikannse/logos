@@ -7,6 +7,5 @@ httpx
 redis
 instructor
 neo4j-graphrag
-litellm
 pytest
 pytest-asyncio

@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import APIRouter, Query
 
 from app.models.noun import (
@@ -8,12 +6,11 @@ from app.models.noun import (
     DisambiguationGroup,
 )
 from app.services.search_service import SearchService
-from app.services.graph_service import GraphBuilder
+from app.services.graph_service import GraphBuilder, get_default_builder
 
 router = APIRouter(tags=["nouns"])
 
 _search_service: SearchService | None = None
-_graph_builder: GraphBuilder | None = None
 
 
 def get_search_service() -> SearchService:
@@ -24,10 +21,8 @@ def get_search_service() -> SearchService:
 
 
 def get_graph_builder() -> GraphBuilder:
-    global _graph_builder
-    if _graph_builder is None:
-        _graph_builder = GraphBuilder()
-    return _graph_builder
+    # 复用全局共享单例，与 SSE 端点共用同一构建器，确保事件可达
+    return get_default_builder()
 
 
 @router.get("/nouns", response_model=NounSearchResponse)
@@ -48,9 +43,10 @@ async def search_nouns(
     result = await service.search(q, language=lang)
 
     # Trigger cold-start build if no results and build flag is set
+    # start_build 内部对同一 query 去重（已在构建中则跳过），避免重复触发付费管道
     if build and len(result.get("results", [])) == 0:
         builder = get_graph_builder()
-        asyncio.create_task(builder.build_graph(q, lang))
+        builder.start_build(q, lang)
 
     return NounSearchResponse(
         results=[
@@ -58,7 +54,7 @@ async def search_nouns(
                 id=r["id"],
                 name=r["name"],
                 type=r["type"],
-                confidence=r.get("confidence", 0.5),
+                confidence=r.get("confidence") if r.get("confidence") is not None else 0.5,
                 summary=r.get("summary", ""),
             )
             for r in result.get("results", [])
@@ -109,5 +105,13 @@ async def get_noun(noun_id: str):
     service = get_search_service()
     result = await service.get_detail(noun_id)
     if result is None:
-        return {"id": noun_id, "message": "Not found"}, 404
+        # 使用与 LogosError.to_dict 一致的错误结构，前端 ApiError 才能解析
+        return {
+            "error": {
+                "code": "not_found",
+                "message": f"未找到名词'{noun_id}'",
+                "status": 404,
+                "details": {},
+            }
+        }, 404
     return result

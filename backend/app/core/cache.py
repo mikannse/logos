@@ -15,7 +15,13 @@ import redis.asyncio as aioredis
 class CacheService:
     """Redis 缓存服务"""
 
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+    def __init__(self, redis_url: Optional[str] = None):
+        # 未显式传参时回退到配置（读取 REDIS_URL 环境变量 / .env），
+        # 否则 docker 容器内缓存会错误地指向容器自身的 localhost。
+        if redis_url is None:
+            from app.config import settings
+
+            redis_url = settings.redis_url
         self.redis_url = redis_url
         self._client: Optional[aioredis.Redis] = None
 

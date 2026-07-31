@@ -16,9 +16,12 @@ class Neo4jClient:
 
     def __init__(self, uri: str = "", user: str = "", password: str = ""):
         if not hasattr(self, "_initialized"):
-            self._uri = uri
-            self._user = user
-            self._password = password
+            # 未显式传参时回退到配置（读取 NEO4J_URI 等环境变量 / .env）
+            from app.config import settings
+
+            self._uri = uri or settings.neo4j_uri
+            self._user = user or settings.neo4j_user
+            self._password = password or settings.neo4j_password
             self._initialized = False
 
     async def connect(self):

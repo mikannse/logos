@@ -23,7 +23,7 @@ const NODE_TYPES: Record<string, { label: string; color: string; shape: string }
 };
 
 const CONFIDENCE_LEGEND = [
-  { label: `${CONFIDENCE_LEVELS.HIGH.label} (>{Math.round(CONFIDENCE_LEVELS.HIGH.min * 100)}%)`, style: "solid", opacity: "1" },
+  { label: `${CONFIDENCE_LEVELS.HIGH.label} (>${Math.round(CONFIDENCE_LEVELS.HIGH.min * 100)}%)`, style: "solid", opacity: "1" },
   { label: `${CONFIDENCE_LEVELS.MEDIUM.label} (${Math.round(CONFIDENCE_LEVELS.MEDIUM.min * 100)}-${Math.round(CONFIDENCE_LEVELS.HIGH.min * 100)}%)`, style: "solid", opacity: "0.6" },
   { label: `${CONFIDENCE_LEVELS.LOW.label} (<${Math.round(CONFIDENCE_LEVELS.MEDIUM.min * 100)}%)`, style: "dashed", opacity: "0.4" },
 ];

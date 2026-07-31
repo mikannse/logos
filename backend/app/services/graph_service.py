@@ -9,7 +9,10 @@
 """
 
 import asyncio
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.ai.llm_client import LLMClient
 from app.ai.extractor import EntityExtractor
@@ -119,6 +122,17 @@ class GraphBuilder:
                             "summary": entity.description,
                         })
 
+                    # Write extracted relations to Neo4j（实体名 → llm_* ID 解析）
+                    for rel in llm_extraction.relations:
+                        await self.neo4j.upsert_relation(
+                            source_id=f"llm_{rel.source.lower().replace(' ', '_')}",
+                            target_id=f"llm_{rel.target.lower().replace(' ', '_')}",
+                            rel_type=rel.relation_type.upper(),
+                            confidence=rel.confidence,
+                            source_url="",
+                            evidence=rel.description,
+                        )
+
                     self._add_sse_event(noun_id, {
                         "type": "nodes_added",
                         "message": f"AI 提取了 {len(llm_extraction.entities)} 个实体和 {len(llm_extraction.relations)} 个关系",
@@ -141,6 +155,7 @@ class GraphBuilder:
             })
 
         except Exception as e:
+            logger.exception("图谱构建失败: query=%r", query)
             self._add_sse_event(noun_id, {
                 "type": "build_error",
                 "message": f"构建过程中出现错误: {str(e)}",
@@ -148,16 +163,22 @@ class GraphBuilder:
             })
 
     def start_build(self, query: str, language: str = "zh"):
-        """异步启动冷启动构建"""
+        """异步启动冷启动构建（同一 query 去重，已在构建中则跳过）"""
         noun_id = f"cold-{query.lower().replace(' ', '_')}"
+
+        # 已存在进行中的构建则直接返回，避免重复触发付费 LLM 管道
+        existing = self._building_tasks.get(noun_id)
+        if existing is not None and not existing.done():
+            return noun_id
 
         # Initialize SSE events for this noun
         if noun_id not in self._sse_events:
             self._sse_events[noun_id] = []
 
-        # Start background task
+        # Start background task，完成时清理引用
         task = asyncio.create_task(self.build_graph(query, language))
         self._building_tasks[noun_id] = task
+        task.add_done_callback(lambda t: self._building_tasks.pop(noun_id, None))
 
         return noun_id
 
@@ -169,4 +190,19 @@ class GraphBuilder:
     def _add_sse_event(self, noun_id: str, event: dict):
         if noun_id not in self._sse_events:
             self._sse_events[noun_id] = []
-        self._sse_events[noun_id].append(event)
+        events = self._sse_events[noun_id]
+        events.append(event)
+        # 每个名词最多保留最近 200 条事件，防止无界累积
+        if len(events) > 200:
+            del events[: len(events) - 200]
+
+
+_default_builder: Optional[GraphBuilder] = None
+
+
+def get_default_builder() -> GraphBuilder:
+    """全局共享的 GraphBuilder 单例（nouns / sse 共用，确保 SSE 事件可达）"""
+    global _default_builder
+    if _default_builder is None:
+        _default_builder = GraphBuilder()
+    return _default_builder

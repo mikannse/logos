@@ -9,11 +9,20 @@ export class ApiError extends Error {
   status: number;
   details: Record<string, unknown>;
 
-  constructor(response: { error: { code: string; message: string; status: number; details?: Record<string, unknown> } }) {
-    super(response.error.message);
-    this.code = response.error.code;
-    this.status = response.error.status;
-    this.details = response.error.details || {};
+  // FastAPI 错误可能返回 {detail: ...}，Logos 风格返回 {error: {...}}。
+  // 统一兼容，避免访问 undefined 抛 TypeError 掩盖真实错误。
+  constructor(response: {
+    error?: { code?: string; message?: string; status?: number; details?: Record<string, unknown> };
+    detail?: unknown;
+    status?: number;
+  }) {
+    super(
+      response?.error?.message ||
+      (typeof response?.detail === "string" ? response.detail : "请求失败")
+    );
+    this.code = response?.error?.code || "unknown";
+    this.status = response?.error?.status || response?.status || 0;
+    this.details = response?.error?.details || {};
   }
 }
 
