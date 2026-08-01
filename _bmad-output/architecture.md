@@ -109,7 +109,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 | ADR | 争议 | 决策 | 原理 |
 |:---|:---|---:|:---|
-| ADR-001 | AI Web Search 同步/异步 | **绝对异步**：并行请求（Wiki + AI Search 同时发），增量图谱节点逐步出现 | 用户感知性能优先 |
+| ADR-001 | AI Web Search 同步/异步 | **绝对异步**：并行请求（Wiki + AI Search 同时发），增量图谱节点逐步出现。**MVP 落地注记（2026-07-31）**：图谱内容丰富先以"同步合并"落地（首次构建 Wikidata + Web Search + LLM 合并后缓存，零前端改动）；SSE 增量推送接线列 Phase 2 | 用户感知性能优先 |
 | ADR-002 | Edge 数据模型粒度 | `source` + `confidence` + `evidence` **必含** | 源头可追溯是信任根基 |
 | ADR-003 | 人物独立 Label | **独立 `:Person` Label** | 人物优先原则的数据层保障 |
 | ADR-004 | 图谱缓存粒度 | **全图缓存 + 节点级增量更新混合** | 命中率 + 数据新鲜度兼得 |
@@ -293,10 +293,10 @@ pip install openai
 {
   "center": "爱因斯坦",
   "nodes": [
-    { "id": "einstein", "label": "爱因斯坦", "type": "person", "confidence": 0.95 }
+    { "id": "einstein", "label": "爱因斯坦", "type": "person", "confidence": 0.95, "relevance": 1.0 }
   ],
   "edges": [
-    { "source": "einstein", "target": "relativity", "type": "developed", "confidence": 0.9, "source_url": "https://..." }
+    { "source": "einstein", "target": "relativity", "type": "developed", "confidence": 0.9, "source_url": "https://...", "relevance": 0.85 }
   ],
   "depth": 1,
   "has_more": true
@@ -342,6 +342,8 @@ pip install openai
 3. Neo4j Label = PascalCase, Relation = UPPER_SNAKE_CASE, 属性 = camelCase
 4. 错误响应必须包含 `code` / `message` / `status` 三字段
 5. 双语言各自遵循各自生态的命名标准
+6. **实体类型推断（2026-07-31）**：规则表（P31 大类映射 + P279 子类继承 + 描述关键词兜底）为主路径，零 LLM 依赖；AI 兜底仅规则未命中且 LLM 已配置时启用，搭既有 Web 丰富管道顺带完成，不新增独立 LLM 调用。对任何名词生效（person/organization/technology/event/concept/entity/category）。
+7. **关系类型映射（2026-07-31）**：Wikidata 属性 → Logos 6 种语义关系类型（creation/affiliation/influence/competition/collaboration/other）；Neo4j 边类型 UPPER_SNAKE 存取、读取归一为小写语义类型，未知类型统一 `other`。
 
 ---
 

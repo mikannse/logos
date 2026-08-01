@@ -349,9 +349,14 @@ src/
 - 缩放（滚轮）+ 拖拽（单个节点 + 整体画布）
 - 节点类型区分着色和图标：
   - 🟦 Person（人物）：圆形，品牌色
-  - 🟩 Entity（实体/概念）：方角，绿色
+  - 🟩 Entity（实体）：方角，绿色
+  - 🟪 Concept（概念）：方角，紫色
+  - 🟦 Technology（技术/产品/软件）：方角，青色
   - 🟧 Event（事件）：菱形，橙色
-- 边类型着色（`GraphLegend` 可切换）
+  - 🟥 Organization（组织/企业）：方角，红色
+  - ⬜ Category（类别/分类节点）：方角，灰色（低相关分类节点视觉退后）
+- 边类型着色（`GraphLegend` 可切换）：影响红/隶属蓝/创作绿/竞争黄/合作紫/其他灰
+- 弱关联淡化：边透明度随 `confidence` 分级（0.2 + confidence×0.5），低置信度虚线；节点透明度随 `relevance` 分级（中心 1，其余 0.45 + relevance×0.55），低相关淡化但保留
 - 点击节点 → 高亮 ego network + 展开侧边栏详情
 - 悬浮节点 → `GraphTooltip` 显示名称 + 类型 + 置信度
 - 增量节点以 **"冒出"动画**（scale + fade）加入
@@ -844,8 +849,9 @@ export class SSEClient {
 export interface GraphNode {
   id: string
   label: string
-  type: 'person' | 'entity' | 'event'
+  type: 'person' | 'entity' | 'event' | 'concept' | 'technology' | 'organization' | 'category'
   confidence: number
+  relevance?: number  // 与中心实体的相关度（0-1），驱动节点淡化
   summary?: string
   image_url?: string
   year?: number  // 人物生卒/事件时间
