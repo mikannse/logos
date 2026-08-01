@@ -50,6 +50,7 @@ async def get_config():
             "model": config.model,
             "provider": config.provider,
             "has_api_key": bool(config.api_key),
+            "has_tavily_api_key": bool(config.tavily_api_key),
         },
     }
 
@@ -64,6 +65,7 @@ async def get_llm_config():
         "model": config.model,
         "provider": config.provider,
         "has_api_key": bool(config.api_key),
+        "has_tavily_api_key": bool(config.tavily_api_key),
     }
 
 
@@ -72,21 +74,30 @@ class LLMConfigUpdate(BaseModel):
     api_key: str = ""
     model: str
     provider: str = ""
+    tavily_api_key: str = ""
 
 
 @router.put("/config/llm")
 async def update_llm_config(body: LLMConfigUpdate):
-    """更新 LLM 配置"""
+    """更新 LLM 配置
+
+    空字段保留已存配置（用户无需为未修改的字段重复填写，尤其是 API Key）：
+    - api_key / tavily_api_key 传空 → 沿用已存 Key，避免误清空
+    - endpoint / model 传空 → 沿用已存值（前端必填，防御绕过）
+    注意：按此语义无法通过空串主动清空 Key；如未来需要，须增加显式 clear 字段。
+    """
     await asyncio.get_running_loop().run_in_executor(
         None, _resolve_and_raise, body.endpoint
     )
 
     service = get_config_service()
+    saved = await service.get_llm_config()
     config = LLMConfig(
-        endpoint=body.endpoint,
-        api_key=body.api_key,
-        model=body.model,
-        provider=body.provider or "custom",
+        endpoint=body.endpoint or saved.endpoint,
+        api_key=body.api_key or saved.api_key,
+        model=body.model or saved.model,
+        provider=body.provider or saved.provider or "custom",
+        tavily_api_key=body.tavily_api_key or saved.tavily_api_key,
     )
     await service.set_llm_config(config)
     return {"status": "ok", "message": "LLM 配置已更新"}
