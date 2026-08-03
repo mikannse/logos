@@ -114,6 +114,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | ADR-003 | 人物独立 Label | **独立 `:Person` Label** | 人物优先原则的数据层保障 |
 | ADR-004 | 图谱缓存粒度 | **全图缓存 + 节点级增量更新混合** | 命中率 + 数据新鲜度兼得 |
 | ADR-005 | 搜索历史快照存储 | **匿名 JSON 文件存储**（`data/history/*.json` + `index.json`），快照为完整副本（图谱 + 时间轴），独立于 Redis 缓存 / Neo4j 持久化 | 匿名免费无登录，零新增依赖，可导出可删除；缓存面向实时展示，快照面向回顾 |
+| ADR-006 | 外部事实来源扩充（全网搜索） | **Wikidata 结构化主源 + Tavily 全网搜索（server-side、DNS-pinned、Key 运行时设置页配置）+ 领域感知权威源兜底池（Wikipedia / OpenAlex / GitHub / Open Library / MusicBrainz / arXiv / Hacker News / Nominatim 等，按实体类型路由，覆盖学术与非学术领域）；无 Key/全失败时退化 LLM 记忆摘要，零前端改动** | 兑现规划中 "AI Web Search" 第二数据源；Tavily 专为 AI/RAG 构建、免费额度、免反爬；兜底池多源 free+稳定+领域路由补足非学术覆盖；全链路优雅退化保证图富/时间轴在无 Key 时不中断 |
 
 ### Key Architectural Principles (Confirmed)
 

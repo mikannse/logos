@@ -316,6 +316,7 @@ So that 即使是冷门名词也能获得可用的图谱数据。
 **And** Wikidata 等主要数据源无数据时，提示用户数据有限，仅展示 LLM 推理结果并标注置信度
 **And** 用户搜索解析出实体且基础图谱强相关节点 <6 时，系统通过 AI Web Search + LLM 提取丰富图谱，实体按与中心实体的相关度（relevance ≥0.5）过滤，名称优先解析为 Wikidata QID（无法解析保留 llm_* 前缀并标低相关度）
 **And** Wikidata 纯分类节点（P31/P279 目标）标为低相关度类别节点（type:category + relevance 0.2），不占据图谱主展示位
+**And** AI Web Search 走真实全网搜索（Tavily API，运行时设置页配置 Key）；Tavily 结果不足/不可用时由领域感知权威源兜底池扩充（Wikipedia / OpenAlex / GitHub / Open Library / MusicBrainz / arXiv / Hacker News / Nominatim 等，按实体类型路由，覆盖学术与非学术领域），仍不足时退化 LLM 记忆摘要（静默，不阻塞图谱构建）
 
 **覆蓋需求:** FR-3（冷启动构建）、NFR-3（异步非阻塞）、架构附加 9（AI 框架）、架构附加 2（SSE 准备）
 
