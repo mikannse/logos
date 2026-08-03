@@ -31,7 +31,9 @@ export default function SourceLink({ url, name, evidence }: SourceLinkProps) {
 
   return (
     <span className="inline-flex items-center gap-1">
-      <Globe className="w-3 h-3 text-surface-muted-foreground" />
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-surface-muted/80">
+        <Globe className="w-2.5 h-2.5 text-surface-muted-foreground" />
+      </span>
       {url ? (
         <a
           href={url}

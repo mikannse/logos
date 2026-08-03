@@ -1,22 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Work+Sans:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  /* Colors - Light */
+  /* Colors - Dark-first (参考 front_example 的深海军蓝 + 青色调) */
+  color-scheme: dark;
   --color-primary: #475569;
   --color-on-primary: #FFFFFF;
-  --color-accent: #2563EB;
-  --color-background: #F8FAFC;
-  --color-foreground: #1E293B;
-  --color-card: #FFFFFF;
-  --color-card-foreground: #1E293B;
-  --color-muted: #EAEFF3;
-  --color-muted-foreground: #64748B;
-  --color-border: #E2E8F0;
-  --color-destructive: #DC2626;
-  --color-success: #16A34A;
-  --color-warning: #D97706;
-  --color-ring: #475569;
+  --color-accent: #7DD3FC;
+  --color-accent-strong: #38BDF8;
+  --color-accent-deep: #0EA5E9;
+  --color-background: #0B0F17;
+  --color-foreground: #E8EEF6;
+  --color-card: #121826;
+  --color-card-foreground: #E8EEF6;
+  --color-muted: #1B2437;
+  --color-muted-foreground: #8A97AD;
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-destructive: #F87171;
+  --color-success: #4ADE80;
+  --color-warning: #FBBF24;
+  --color-ring: #7DD3FC;
 
   /* Spacing Tokens */
   --space-xs: 4px;
@@ -28,46 +31,90 @@
   --space-3xl: 64px;
 
   /* Border Radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-modal: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-modal: 0 0 0 1px rgb(255 255 255 / 0.06), 0 25px 50px -12px rgb(0 0 0 / 0.6);
+  --shadow-xl: 0 0 0 1px rgb(255 255 255 / 0.05), 0 25px 50px -12px rgb(0 0 0 / 0.6);
+  --shadow-glow: 0 0 24px rgb(125 211 252 / 0.18);
+  --shadow-glow-sm: 0 0 12px rgb(125 211 252 / 0.12);
 }
 
 .dark {
-  --color-primary: #818CF8;
-  --color-on-primary: #0F172A;
-  --color-accent: #60A5FA;
-  --color-background: #0A0A0F;
-  --color-foreground: #F1F5F9;
-  --color-card: #18181B;
-  --color-card-foreground: #E2E8F0;
-  --color-muted: #27272A;
-  --color-muted-foreground: #A1A1AA;
-  --color-border: #3F3F46;
+  color-scheme: dark;
+  --color-primary: #475569;
+  --color-on-primary: #FFFFFF;
+  --color-accent: #7DD3FC;
+  --color-accent-strong: #38BDF8;
+  --color-accent-deep: #0EA5E9;
+  --color-background: #0B0F17;
+  --color-foreground: #E8EEF6;
+  --color-card: #121826;
+  --color-card-foreground: #E8EEF6;
+  --color-muted: #1B2437;
+  --color-muted-foreground: #8A97AD;
+  --color-border: rgb(255 255 255 / 0.08);
   --color-destructive: #F87171;
   --color-success: #4ADE80;
   --color-warning: #FBBF24;
-  --color-ring: #818CF8;
+  --color-ring: #7DD3FC;
+}
 
-  --shadow-sm: none;
-  --shadow-card: none;
-  --shadow-elevated: 0 0 0 1px rgb(255 255 255 / 0.05);
-  --shadow-modal: 0 0 0 1px rgb(255 255 255 / 0.1), 0 25px 50px -12px rgb(0 0 0 / 0.5);
-  --shadow-xl: 0 0 0 1px rgb(255 255 255 / 0.08), 0 25px 50px -12px rgb(0 0 0 / 0.5);
+/* Light mode（保留，但调成与深色同款、更清爽的浅色） */
+:root.light {
+  color-scheme: light;
+  --color-primary: #475569;
+  --color-on-primary: #FFFFFF;
+  --color-accent: #0284C7;
+  --color-accent-strong: #0369A1;
+  --color-accent-deep: #0EA5E9;
+  --color-background: #F4F7FB;
+  --color-foreground: #16202E;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #16202E;
+  --color-muted: #E7EDF4;
+  --color-muted-foreground: #5C6B80;
+  --color-border: rgb(15 30 52 / 0.1);
+  --color-destructive: #DC2626;
+  --color-success: #16A34A;
+  --color-warning: #D97706;
+  --color-ring: #0284C7;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    color-scheme: light;
+    --color-primary: #475569;
+    --color-on-primary: #FFFFFF;
+    --color-accent: #0284C7;
+    --color-accent-strong: #0369A1;
+    --color-accent-deep: #0EA5E9;
+    --color-background: #F4F7FB;
+    --color-foreground: #16202E;
+    --color-card: #FFFFFF;
+    --color-card-foreground: #16202E;
+    --color-muted: #E7EDF4;
+    --color-muted-foreground: #5C6B80;
+    --color-border: rgb(15 30 52 / 0.1);
+    --color-destructive: #DC2626;
+    --color-success: #16A34A;
+    --color-warning: #D97706;
+    --color-ring: #0284C7;
+  }
 }
 
 @theme inline {
   --color-brand-primary: var(--color-primary);
   --color-brand-on-primary: var(--color-on-primary);
   --color-brand-accent: var(--color-accent);
+  --color-brand-accent-strong: var(--color-accent-strong);
+  --color-brand-accent-deep: var(--color-accent-deep);
   --color-surface: var(--color-background);
   --color-surface-foreground: var(--color-foreground);
   --color-surface-card: var(--color-card);
@@ -83,6 +130,10 @@
   --font-sans: 'Work Sans', system-ui, sans-serif;
   --font-heading: 'Outfit', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
@@ -111,8 +162,159 @@ h1, h2, h3, h4 {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-muted-foreground);
+  background: var(--color-muted);
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+/* Selection */
+::selection {
+  background: rgb(125 211 252 / 0.25);
+  color: var(--color-foreground);
+}
+
+/* ============ 参考 front_example 的全局网格底图 ============ */
+@layer utilities {
+  .grid-backdrop {
+    background-image:
+      radial-gradient(circle at 50% 0%, oklch(0.85 0.09 200 / 0.12), transparent 55%),
+      radial-gradient(circle at 85% 90%, oklch(0.7 0.12 250 / 0.1), transparent 45%),
+      linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  }
+
+  /* 浅色模式下的网格底图（更淡、更冷） */
+  .grid-backdrop-light {
+    background-image:
+      radial-gradient(circle at 50% 0%, oklch(0.8 0.08 220 / 0.1), transparent 55%),
+      radial-gradient(circle at 85% 90%, oklch(0.75 0.08 250 / 0.08), transparent 45%),
+      linear-gradient(to right, rgb(15 30 52 / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(15 30 52 / 0.04) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  }
+
+  .grid-backdrop-auto {
+    background-image:
+      radial-gradient(circle at 50% 0%, oklch(0.85 0.09 200 / 0.12), transparent 55%),
+      radial-gradient(circle at 85% 90%, oklch(0.7 0.12 250 / 0.1), transparent 45%),
+      linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) .grid-backdrop-auto {
+      background-image:
+        radial-gradient(circle at 50% 0%, oklch(0.8 0.08 220 / 0.1), transparent 55%),
+        radial-gradient(circle at 85% 90%, oklch(0.75 0.08 250 / 0.08), transparent 45%),
+        linear-gradient(to right, rgb(15 30 52 / 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgb(15 30 52 / 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+    }
+  }
+  :root.light .grid-backdrop-auto {
+    background-image:
+      radial-gradient(circle at 50% 0%, oklch(0.8 0.08 220 / 0.1), transparent 55%),
+      radial-gradient(circle at 85% 90%, oklch(0.75 0.08 250 / 0.08), transparent 45%),
+      linear-gradient(to right, rgb(15 30 52 / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(15 30 52 / 0.04) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  }
+}
+
+/* ============ 动画关键帧（参考 front_example 的 tw-animate-css 语义） ============ */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes zoom-in-95 {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-in-bottom {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-in {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+.animate-in.fade-in { animation-name: fade-in; }
+.animate-in.zoom-in-95 { animation-name: zoom-in-95; }
+.animate-in.slide-in-right { animation-name: slide-in-right; }
+.animate-in.slide-in-bottom { animation-name: slide-in-bottom; }
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 渐变呼吸（搜索输入框光晕、主按钮） */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(125 211 252 / 0.28); }
+  50% { box-shadow: 0 0 0 8px rgb(125 211 252 / 0); }
+}
+.animate-breathe {
+  animation: breathe 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 缓入（页面 / 卡片） */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise-in {
+  animation: rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 轻微浮动（空状态图标） */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-float {
+  animation: float-y 3s ease-in-out infinite;
+}
+
+/* 旋转的 SVG 轨道（加载状态装饰） */
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 6s linear infinite;
+}
+
+/* 红色/蓝色渐变文字 */
+.text-gradient {
+  background: linear-gradient(120deg, #7DD3FC, #818CF8 60%, #38BDF8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 浅色模式文字渐变 */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) .text-gradient {
+    background: linear-gradient(120deg, #0284C7, #4F46E5 60%, #0EA5E9);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 
 /* Reduced motion */

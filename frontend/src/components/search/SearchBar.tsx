@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, Loader2, Settings } from "lucide-react";
+import { Search, Loader2, Settings, ArrowRight, CornerDownLeft } from "lucide-react";
 import { useState, useCallback, useRef, useEffect, FormEvent } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -111,10 +111,16 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
     [showSuggestions, suggestions.length]
   );
 
+  const inputFocused = query.trim().length > 0;
+
   return (
     <form onSubmit={handleSubmit} className="relative w-full">
-      <div className="relative flex items-center">
-        <Search className="absolute left-4 w-5 h-5 text-surface-muted-foreground pointer-events-none" />
+      <div
+        className={`group relative flex items-center rounded-2xl border border-border-default bg-surface-card/80 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-all duration-300 focus-within:border-brand-accent/60 focus-within:bg-surface-card focus-within:ring-4 focus-within:ring-brand-accent/15 focus-within:shadow-[var(--shadow-glow)] ${
+          inputFocused ? "ring-1 ring-brand-accent/10" : ""
+        }`}
+      >
+        <Search className="absolute left-4 w-5 h-5 text-surface-muted-foreground pointer-events-none transition-colors group-focus-within:text-brand-accent" />
         <input
           ref={inputRef}
           type="text"
@@ -128,8 +134,8 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
             setTimeout(() => setShowSuggestions(false), 200);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="输入名词探索..."
-          className="w-full h-12 pl-12 pr-32 bg-surface-card border border-border-default rounded-xl text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent focus:border-transparent transition-shadow duration-150"
+          placeholder="输入任意名词，如「爱因斯坦」「区块链」「相对论」…"
+          className="w-full h-13 pl-12 pr-36 py-3.5 bg-transparent text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none rounded-2xl"
           aria-label="搜索名词"
           autoComplete="off"
           minLength={2}
@@ -139,18 +145,21 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
           <button
             type="submit"
             disabled={query.trim().length < 2}
-            className="inline-flex items-center justify-center h-9 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-brand-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
+            className="inline-flex items-center justify-center h-9 px-4 gap-1.5 bg-brand-accent text-surface-card rounded-xl text-sm font-medium hover:bg-brand-accent-strong hover:shadow-[var(--shadow-glow-sm)] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none transition-all duration-200 cursor-pointer"
             aria-label="搜索"
           >
             {isSubmitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              "搜索"
+              <>
+                <span className="hidden sm:inline">探索</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
             )}
           </button>
           <Link
             href="/settings"
-            className="h-9 w-9 flex items-center justify-center rounded-lg text-surface-muted-foreground hover:bg-surface-muted hover:text-surface-foreground transition-colors"
+            className="h-9 w-9 flex items-center justify-center rounded-xl text-surface-muted-foreground hover:bg-surface-muted/80 hover:text-surface-foreground hover:rotate-90 transition-all duration-300"
             aria-label="设置"
           >
             <Settings className="w-4 h-4" />
@@ -160,7 +169,7 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
 
       {/* Autocomplete suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-40 left-0 right-0 mt-1 bg-surface-card border border-border-default rounded-xl shadow-[var(--shadow-elevated)] overflow-hidden">
+        <div className="absolute z-40 left-0 right-0 mt-2 bg-surface-card/95 backdrop-blur-xl border border-border-default rounded-2xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95 origin-top">
           {suggestions.map((s, i) => (
             <button
               key={`${s.id}-${i}`}
@@ -169,14 +178,22 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
                 e.preventDefault();
                 navigateToSearch(s.name);
               }}
-              className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors cursor-pointer ${
+              className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors cursor-pointer ${
                 i === selectedIdx
                   ? "bg-brand-accent/10 text-surface-foreground"
-                  : "text-surface-foreground hover:bg-surface-muted"
+                  : "text-surface-foreground hover:bg-surface-muted/70"
               }`}
             >
-              <Search className="w-3.5 h-3.5 text-surface-muted-foreground shrink-0" />
-              <div className="min-w-0">
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  i === selectedIdx
+                    ? "bg-brand-accent/20 text-brand-accent"
+                    : "bg-surface-muted/70 text-surface-muted-foreground"
+                }`}
+              >
+                <Search className="w-3.5 h-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
                 <span className="text-sm font-medium">{s.name}</span>
                 {s.summary && (
                   <span className="ml-2 text-xs text-surface-muted-foreground truncate">
@@ -185,12 +202,19 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
                 )}
               </div>
               {s.type && (
-                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-surface-muted-foreground shrink-0">
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted text-surface-muted-foreground shrink-0 border border-border-default">
                   {s.type}
                 </span>
               )}
+              {i === selectedIdx && (
+                <CornerDownLeft className="w-3 h-3 text-brand-accent shrink-0" />
+              )}
             </button>
           ))}
+          <div className="border-t border-border-default px-4 py-1.5 flex items-center justify-between text-[10px] text-surface-muted-foreground/70 bg-surface-muted/40">
+            <span>↑↓ 选择</span>
+            <span>Enter 搜索</span>
+          </div>
         </div>
       )}
 

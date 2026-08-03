@@ -347,7 +347,7 @@ function SearchContent() {
       )}
 
       {/* Search bar */}
-      <div className="w-full max-w-2xl mx-auto px-4 py-3">
+      <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-2">
         <SearchBar initialQuery={displayTitle} />
       </div>
 
@@ -365,7 +365,7 @@ function SearchContent() {
                   <button
                     key={r.id}
                     onClick={() => navigateToFuzzy(r.id, r.name)}
-                    className="px-3 py-1 text-sm rounded-full border border-border-default bg-surface-card text-surface-foreground hover:bg-brand-accent hover:text-white transition-colors cursor-pointer"
+                    className="px-3 py-1 text-sm rounded-full border border-border-default bg-surface-card/70 text-surface-foreground hover:border-brand-accent/60 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors cursor-pointer backdrop-blur-sm"
                   >
                     {r.name}
                     <span className="ml-1.5 text-xs opacity-60">
@@ -377,12 +377,12 @@ function SearchContent() {
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-lg font-semibold text-surface-foreground font-heading">
               {displayTitle}
             </h1>
             {entityId && (
-              <span className="text-xs font-mono text-surface-muted-foreground">
+              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-surface-muted/80 border border-border-default text-surface-muted-foreground">
                 {entityId}
               </span>
             )}
@@ -399,10 +399,10 @@ function SearchContent() {
       )}
 
       {/* Main graph + detail panel layout */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-3 px-4 pb-3 max-w-7xl mx-auto w-full">
+      <div className="flex-1 flex flex-col lg:flex-row gap-3 px-4 pb-4 max-w-7xl mx-auto w-full">
         {/* Graph area */}
         <div className="flex-1 flex flex-col gap-3 min-w-0">
-          <div className="relative flex-1 min-h-[450px] bg-surface-card rounded-xl border border-border-default overflow-hidden">
+          <div className="relative flex-1 min-h-[450px] bg-surface-card/60 backdrop-blur-sm rounded-2xl border border-border-default overflow-hidden shadow-[var(--shadow-card)]">
             {/* Graph legend overlay */}
             <div className="absolute top-3 left-3 z-10">
               <GraphLegend />
@@ -420,7 +420,7 @@ function SearchContent() {
                 onNodeHover={handleNodeHover}
               />
             ) : (
-              <div className="flex items-center justify-center h-full min-h-[450px]">
+              <div className="grid-backdrop-auto flex items-center justify-center h-full min-h-[450px]">
                 <EmptyState
                   title="暂无图谱数据"
                   description={hasNoResults ? `未找到"${query}"的信息` : "搜索后图谱将在此展示"}

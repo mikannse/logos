@@ -11,6 +11,7 @@ venv/
 .vscode/
 *.log
 .DS_Store
+.pytest_cache/
 
 # 本地数据（匿名搜索历史快照）
 backend/data/

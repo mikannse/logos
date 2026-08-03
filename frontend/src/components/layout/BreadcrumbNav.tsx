@@ -24,7 +24,7 @@ export default function BreadcrumbNav({ items, onNavigate }: BreadcrumbNavProps)
     >
       <button
         onClick={() => onNavigate(items[0], 0)}
-        className="flex items-center gap-1 px-2 py-1 rounded-md text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted transition-colors shrink-0 cursor-pointer"
+        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted/70 hover:shadow-[var(--shadow-glow-sm)] transition-all duration-200 shrink-0 cursor-pointer"
         aria-label="返回起始"
       >
         <Home className="w-3.5 h-3.5" />
@@ -32,12 +32,12 @@ export default function BreadcrumbNav({ items, onNavigate }: BreadcrumbNavProps)
 
       {items.map((item, i) => (
         <div key={item.id} className="flex items-center gap-1 shrink-0">
-          <ChevronRight className="w-3 h-3 text-surface-muted-foreground" />
+          <ChevronRight className="w-3 h-3 text-surface-muted-foreground/60" />
           <button
             onClick={() => onNavigate(item, i)}
-            className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg transition-all duration-200 cursor-pointer ${
               i === items.length - 1
-                ? "text-surface-foreground font-medium bg-surface-muted"
+                ? "text-surface-foreground font-medium bg-surface-muted/80 border border-border-default"
                 : "text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted/50"
             }`}
           >

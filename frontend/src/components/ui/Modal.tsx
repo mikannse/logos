@@ -36,7 +36,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface/70 backdrop-blur-md p-4 animate-in fade-in"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
@@ -44,16 +44,16 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
       aria-modal="true"
       aria-label={title}
     >
-      <div className="w-full max-w-lg bg-surface-card rounded-xl shadow-[var(--shadow-modal)] animate-in fade-in zoom-in-95">
+      <div className="w-full max-w-lg bg-surface-card/95 backdrop-blur-xl border border-border-default rounded-2xl shadow-[var(--shadow-modal)] animate-in fade-in zoom-in-95">
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between px-6 pt-6 pb-2">
+          <div className="flex items-center justify-between px-6 pt-6 pb-2 border-b border-border-default">
             <h2 className="text-lg font-semibold text-surface-card-foreground font-heading">
               {title}
             </h2>
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-surface-muted-foreground hover:text-surface-foreground transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted transition-colors cursor-pointer"
               aria-label="关闭"
             >
               <X className="w-5 h-5" />

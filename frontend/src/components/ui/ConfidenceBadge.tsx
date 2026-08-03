@@ -26,7 +26,7 @@ export default function ConfidenceBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${level.bg} ${level.color} ${textSize} font-medium`}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-border-default ${level.bg} ${level.color} ${textSize} font-medium`}
       title={`置信度: ${level.label} (${Math.round(confidence * 100)}%)`}
     >
       <Icon className={iconSize} />

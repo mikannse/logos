@@ -12,9 +12,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={clsx(
-          "inline-flex items-center justify-center rounded-md font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-primary cursor-pointer",
+          "inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-accent cursor-pointer active:scale-[0.98]",
           {
-            "bg-brand-accent text-white hover:bg-blue-700":
+            "bg-brand-accent text-surface-card hover:bg-brand-accent-strong hover:shadow-[var(--shadow-glow-sm)]":
               variant === "primary",
             "border border-border-default bg-transparent text-surface-foreground hover:bg-surface-muted":
               variant === "secondary",

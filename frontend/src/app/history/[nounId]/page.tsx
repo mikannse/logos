@@ -100,17 +100,19 @@ export default function HistoryDetailPage() {
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <History className="w-5 h-5 text-brand-accent shrink-0" />
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-accent/15 text-brand-accent ring-1 ring-brand-accent/30">
+          <History className="w-4 h-4 shrink-0" />
+        </span>
         <h1 className="text-xl font-semibold text-surface-foreground font-heading">
           {entityName}
         </h1>
-        <span className="text-xs font-mono text-surface-muted-foreground">{nounId}</span>
-        <span className="flex items-center gap-1 text-xs text-surface-muted-foreground">
+        <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-surface-muted/80 border border-border-default text-surface-muted-foreground">{nounId}</span>
+        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-surface-muted/80 border border-border-default text-surface-muted-foreground">
           <Clock className="w-3 h-3" /> {formatSavedAt(snapshot.saved_at)}
         </span>
         <button
           onClick={handleDelete}
-          className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-xs border border-border-default bg-surface-card rounded-lg text-surface-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors cursor-pointer"
+          className="ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-border-default bg-surface-card/80 rounded-lg text-surface-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors cursor-pointer"
           aria-label="删除该快照"
         >
           <Trash2 className="w-3.5 h-3.5" /> 删除
@@ -118,11 +120,11 @@ export default function HistoryDetailPage() {
       </div>
 
       {/* Graph（复用 GraphCanvas，含内嵌图例） */}
-      <div className="relative flex-1 min-h-[450px] bg-surface-card rounded-xl border border-border-default overflow-hidden">
+      <div className="relative flex-1 min-h-[450px] bg-surface-card/60 backdrop-blur-sm rounded-2xl border border-border-default overflow-hidden shadow-[var(--shadow-card)]">
         {nodes.length > 0 ? (
           <GraphCanvas centerId={nounId} nodes={nodes} edges={edges} />
         ) : (
-          <div className="flex items-center justify-center h-full min-h-[450px]">
+          <div className="grid-backdrop-auto flex items-center justify-center h-full min-h-[450px]">
             <EmptyState title="暂无图谱数据" description="该快照未保存图谱数据" />
           </div>
         )}

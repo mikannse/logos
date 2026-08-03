@@ -7,7 +7,7 @@ export default function Skeleton({
   return (
     <div
       className={clsx(
-        "animate-pulse-subtle rounded-md bg-surface-muted",
+        "animate-pulse-subtle rounded-lg bg-surface-muted",
         className
       )}
       {...props}

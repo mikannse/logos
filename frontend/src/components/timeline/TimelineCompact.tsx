@@ -64,10 +64,10 @@ export default function TimelineCompact({
 
   if (isLoading) {
     return (
-      <div className="h-24 bg-surface-card rounded-xl border border-border-default p-4">
+      <div className="h-24 bg-surface-card/80 backdrop-blur-sm rounded-2xl border border-border-default p-4 shadow-[var(--shadow-card)]">
         <div className="flex gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-20 shrink-0 rounded-lg" />
+            <Skeleton key={i} className="h-16 w-20 shrink-0 rounded-xl" />
           ))}
         </div>
       </div>
@@ -76,17 +76,19 @@ export default function TimelineCompact({
 
   if (milestones.length === 0) {
     return (
-      <div className="h-24 bg-surface-card rounded-xl border border-border-default flex items-center justify-center gap-2 text-sm text-surface-muted-foreground">
-        <Clock className="w-4 h-4" />
+      <div className="h-24 bg-surface-card/80 backdrop-blur-sm rounded-2xl border border-border-default flex items-center justify-center gap-2 text-sm text-surface-muted-foreground shadow-[var(--shadow-card)]">
+        <Clock className="w-4 h-4 text-brand-accent" />
         该概念的演化数据有限
       </div>
     );
   }
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default p-3">
+    <div className="bg-surface-card/80 backdrop-blur-sm rounded-2xl border border-border-default p-3 shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2 mb-3">
-        <Clock className="w-4 h-4 text-brand-accent" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-accent/15 text-brand-accent">
+          <Clock className="w-4 h-4" />
+        </span>
         <span className="text-sm font-medium text-surface-foreground font-heading">
           演化时间轴
         </span>
@@ -104,10 +106,10 @@ export default function TimelineCompact({
           <button
             key={i}
             onClick={() => handleMilestoneClick(i, m)}
-            className={`shrink-0 w-28 p-2 rounded-lg border text-left transition-all duration-150 cursor-pointer ${
+            className={`shrink-0 w-28 p-2 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
               activeIndex === i
-                ? "border-brand-accent bg-brand-accent/5 ring-1 ring-brand-accent/30"
-                : "border-border-default hover:border-surface-muted-foreground"
+                ? "border-brand-accent/60 bg-brand-accent/10 ring-1 ring-brand-accent/30 shadow-[var(--shadow-glow-sm)]"
+                : "border-border-default hover:border-surface-muted-foreground/50 hover:bg-surface-muted/50 hover:-translate-y-0.5"
             }`}
           >
             <div className="text-xs font-bold text-brand-accent">{m.year}</div>

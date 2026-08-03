@@ -14,12 +14,12 @@ interface GraphCanvasProps {
 }
 
 const NODE_COLORS: Record<string, string> = {
-  person: "#2563EB",
-  entity: "#16A34A",
-  event: "#D97706",
-  concept: "#8B5CF6",
-  technology: "#0891B2",
-  organization: "#DC2626",
+  person: "#38BDF8",
+  entity: "#34D399",
+  event: "#FB7185",
+  concept: "#A78BFA",
+  technology: "#22D3EE",
+  organization: "#4ADE80",
   category: "#94A3B8",
 };
 
@@ -72,11 +72,11 @@ export default function GraphCanvas({
   const shapesRef = useRef<d3.Selection<SVGGElement | d3.BaseType, SimNode, SVGGElement, unknown> | null>(null);
   const getEdgeColor = useCallback((type: string) => {
     const edgeColors: Record<string, string> = {
-      influence: "#DC2626",
-      affiliation: "#2563EB",
-      creation: "#16A34A",
-      competition: "#D97706",
-      collaboration: "#8B5CF6",
+      influence: "#FB7185",
+      affiliation: "#38BDF8",
+      creation: "#34D399",
+      competition: "#FBBF24",
+      collaboration: "#A78BFA",
     };
     return edgeColors[type] || "#64748B";
   }, []);
@@ -245,7 +245,13 @@ export default function GraphCanvas({
       const r = d.id === centerId ? 22 : 16;
       const color = NODE_COLORS[d.type] || "#64748B";
 
-      // Drop shadow for center node
+      // 光晕底（glow halo）：所有节点都有一层柔和的彩色光晕，中心更强
+      el.append("circle")
+        .attr("r", r + 9)
+        .attr("fill", color)
+        .attr("opacity", d.id === centerId ? 0.22 : 0.1);
+
+      // Drop shadow ring for center node
       if (d.id === centerId) {
         el.append("circle")
           .attr("r", r + 4)
@@ -260,11 +266,17 @@ export default function GraphCanvas({
         el.append("circle")
           .attr("r", r)
           .attr("fill", color)
+          .attr("fill-opacity", 0.22)
+          .attr("stroke", color)
+          .attr("stroke-width", d.id === centerId ? 2.5 : 1.6)
           .attr("opacity", 1);
       } else if (d.type === "event") {
         el.append("polygon")
           .attr("points", `0,${-r * 1.3} ${r * 1.3},0 0,${r * 1.3} ${-r * 1.3},0`)
           .attr("fill", color)
+          .attr("fill-opacity", 0.22)
+          .attr("stroke", color)
+          .attr("stroke-width", d.id === centerId ? 2.5 : 1.6)
           .attr("opacity", 1);
       } else {
         // entity / concept / technology
@@ -275,20 +287,27 @@ export default function GraphCanvas({
           .attr("height", r * 1.7)
           .attr("rx", r * 0.25)
           .attr("fill", color)
+          .attr("fill-opacity", 0.22)
+          .attr("stroke", color)
+          .attr("stroke-width", d.id === centerId ? 2.5 : 1.6)
           .attr("opacity", 1);
       }
 
       // group opacity：中心 1.0，其他随 relevance 分级（由淡化开关 effect 统一更新）
       el.attr("opacity", nodeOpacity(d));
 
-      // Node label
+      // Node label（描边衬底，保证任何背景下可读）
       el.append("text")
         .text(d.label.length > 8 ? d.label.slice(0, 7) + "…" : d.label)
         .attr("text-anchor", "middle")
         .attr("dy", r + 16)
         .attr("fill", "var(--color-foreground)")
         .attr("font-size", "11px")
-        .attr("font-family", "var(--font-work-sans)");
+        .attr("font-family", "var(--font-work-sans)")
+        .attr("font-weight", d.id === centerId ? 600 : 400)
+        .attr("paint-order", "stroke")
+        .attr("stroke", "var(--color-background)")
+        .attr("stroke-width", 3);
 
       // Hover events
       el.on("mouseenter", function (event) {
@@ -304,15 +323,15 @@ export default function GraphCanvas({
         tooltip.style("opacity", 1)
           .style("display", "block")
           .html(`
-            <div class="p-3 text-sm">
-              <div class="font-semibold text-surface-foreground font-heading">${safeLabel}</div>
-              <div class="flex gap-1 mt-1">
-                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted text-surface-muted-foreground">${safeType}</span>
-                <span class="text-[10px] px-1 py-0.5 rounded bg-surface-muted ${confClass}">
+            <div class="p-3 text-sm min-w-[180px] max-w-[260px]">
+              <div class="font-semibold text-surface-foreground font-heading text-base">${safeLabel}</div>
+              <div class="flex gap-1 mt-1.5 items-center">
+                <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted text-surface-muted-foreground border border-border-default">${safeType}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted ${confClass} border border-border-default">
                   ${Math.round(d.confidence * 100)}%
                 </span>
               </div>
-              ${safeSummary ? `<p class="mt-1 text-xs text-surface-muted-foreground">${safeSummary}</p>` : ""}
+              ${safeSummary ? `<p class="mt-1.5 text-xs text-surface-muted-foreground leading-relaxed">${safeSummary}</p>` : ""}
             </div>
           `);
         setHoveredNode(d);
@@ -453,12 +472,15 @@ export default function GraphCanvas({
     // 容器塌缩到 min-h 兜底值，SVG 只剩顶部一截（图谱下方大片死区/节点被裁）。
     <div ref={containerRef} className="absolute inset-0 w-full h-full">
       {/* Graph legend */}
-      <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-xs bg-surface-card/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-border-default">
+      <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-3 text-xs bg-surface-card/80 backdrop-blur-md px-3 py-2 rounded-xl border border-border-default shadow-[var(--shadow-card)]">
         {Object.entries(NODE_COLORS).map(([type, color]) => (
-          <span key={type} className="flex items-center gap-1">
+          <span key={type} className="flex items-center gap-1.5">
             <span
-              className="inline-block w-2.5 h-2.5 rounded-sm"
-              style={{ backgroundColor: color }}
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{
+                backgroundColor: color,
+                boxShadow: `0 0 6px ${color}`,
+              }}
             />
             {type}
           </span>
@@ -475,18 +497,18 @@ export default function GraphCanvas({
       {/* Tooltip */}
       <div
         ref={tooltipRef}
-        className="fixed z-20 pointer-events-none bg-surface-card border border-border-default rounded-lg shadow-[var(--shadow-elevated)] opacity-0 transition-opacity duration-150"
+        className="fixed z-20 pointer-events-none bg-surface-card/95 backdrop-blur-xl border border-border-default rounded-xl shadow-[var(--shadow-modal)] opacity-0 transition-opacity duration-150"
         style={{ display: "none" }}
       />
 
       {/* Controls */}
-      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2">
+      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-xl border border-border-default bg-surface-card/80 p-1.5 backdrop-blur-md shadow-[var(--shadow-card)]">
         <button
           onClick={() => setWeakenEnabled((v) => !v)}
-          className={`p-2 rounded-lg border transition-colors cursor-pointer text-xs ${
+          className={`px-2.5 py-1.5 rounded-lg border transition-all duration-200 cursor-pointer text-xs ${
             weakenEnabled
-              ? "bg-brand-accent text-white border-brand-accent"
-              : "bg-surface-card border-border-default text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted"
+              ? "bg-brand-accent text-surface-card border-brand-accent shadow-[var(--shadow-glow-sm)]"
+              : "bg-surface-card/60 border-border-default text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted"
           }`}
           aria-pressed={weakenEnabled}
           aria-label="弱关联淡化开关"
@@ -508,7 +530,7 @@ export default function GraphCanvas({
                 .call(zoomRef.current.transform, d3.zoomIdentity);
             }
           }}
-          className="p-2 bg-surface-card border border-border-default rounded-lg text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted transition-colors cursor-pointer text-xs"
+          className="w-8 h-8 flex items-center justify-center bg-surface-card/60 border border-border-default rounded-lg text-surface-muted-foreground hover:text-surface-foreground hover:bg-surface-muted transition-colors cursor-pointer text-xs"
           aria-label="重置视图"
           title="重置视图"
         >

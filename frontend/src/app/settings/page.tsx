@@ -160,7 +160,7 @@ export default function SettingsPage() {
       <div className="flex items-center gap-3 mb-8">
         <button
           onClick={() => router.back()}
-          className="p-2 rounded-lg hover:bg-surface-muted transition-colors cursor-pointer"
+          className="p-2 rounded-lg hover:bg-surface-muted hover:shadow-[var(--shadow-glow-sm)] transition-all duration-200 cursor-pointer"
           aria-label="返回"
         >
           <ArrowLeft className="w-5 h-5 text-surface-foreground" />
@@ -185,14 +185,14 @@ export default function SettingsPage() {
             <button
               key={p.label}
               onClick={() => applyPreset(p)}
-              className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors cursor-pointer ${
+              className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all duration-200 cursor-pointer ${
                 activePreset === p.label
-                  ? "border-brand-accent bg-brand-accent/5 ring-1 ring-brand-accent/30"
-                  : "border-border-default hover:border-surface-muted-foreground bg-surface-card"
+                  ? "border-brand-accent/60 bg-brand-accent/10 ring-1 ring-brand-accent/30 shadow-[var(--shadow-glow-sm)]"
+                  : "border-border-default hover:border-surface-muted-foreground/50 hover:bg-surface-muted/40 bg-surface-card/80 hover:-translate-y-0.5"
               }`}
             >
               <div className="font-medium text-surface-foreground">{p.label}</div>
-              <div className="text-[10px] text-surface-muted-foreground mt-0.5 truncate">
+              <div className="text-[10px] text-surface-muted-foreground mt-0.5 truncate font-mono">
                 {p.endpoint}
               </div>
             </button>
@@ -205,7 +205,7 @@ export default function SettingsPage() {
         {/* Endpoint */}
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-surface-foreground mb-1.5">
-            <Server className="w-4 h-4" />
+            <Server className="w-4 h-4 text-brand-accent" />
             API 端点
           </label>
           <input
@@ -213,10 +213,10 @@ export default function SettingsPage() {
             value={endpoint}
             onChange={(e) => setEndpoint(e.target.value)}
             placeholder="https://api.openai.com/v1"
-            className="w-full h-10 px-3 bg-surface-card border border-border-default rounded-lg text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent"
+            className="w-full h-11 px-3.5 bg-surface-card/80 border border-border-default rounded-xl text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent/40 focus:border-brand-accent/50 transition-shadow duration-200"
             required
           />
-          <p className="mt-1 text-[11px] text-surface-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-surface-muted-foreground">
             兼容 OpenAI 格式的 API 端点（LiteLLM Proxy 通常为 http://localhost:4000/v1）
           </p>
         </div>
@@ -224,7 +224,7 @@ export default function SettingsPage() {
         {/* API Key */}
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-surface-foreground mb-1.5">
-            <Key className="w-4 h-4" />
+            <Key className="w-4 h-4 text-brand-accent" />
             API Key
           </label>
           <input
@@ -232,17 +232,17 @@ export default function SettingsPage() {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={hasExistingKey ? "已配置（输入新 Key 覆盖）" : "输入 API Key..."}
-            className="w-full h-10 px-3 bg-surface-card border border-border-default rounded-lg text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent"
+            className="w-full h-11 px-3.5 bg-surface-card/80 border border-border-default rounded-xl text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent/40 focus:border-brand-accent/50 transition-shadow duration-200"
           />
           {hasExistingKey && !apiKey && (
-            <p className="mt-1 text-[11px] text-success">✅ 已有 Key 配置，无需重复填写</p>
+            <p className="mt-1.5 text-[11px] text-success">✅ 已有 Key 配置，无需重复填写</p>
           )}
         </div>
 
         {/* Tavily API Key（全网搜索） */}
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-surface-foreground mb-1.5">
-            <Globe className="w-4 h-4" />
+            <Globe className="w-4 h-4 text-brand-accent" />
             Tavily API Key
           </label>
           <input
@@ -250,12 +250,12 @@ export default function SettingsPage() {
             value={tavilyApiKey}
             onChange={(e) => setTavilyApiKey(e.target.value)}
             placeholder={hasExistingTavilyKey ? "已配置（输入新 Key 覆盖）" : "输入 Tavily API Key..."}
-            className="w-full h-10 px-3 bg-surface-card border border-border-default rounded-lg text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent"
+            className="w-full h-11 px-3.5 bg-surface-card/80 border border-border-default rounded-xl text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent/40 focus:border-brand-accent/50 transition-shadow duration-200"
           />
           {hasExistingTavilyKey && !tavilyApiKey && (
-            <p className="mt-1 text-[11px] text-success">✅ 已有 Tavily Key 配置，无需重复填写</p>
+            <p className="mt-1.5 text-[11px] text-success">✅ 已有 Tavily Key 配置，无需重复填写</p>
           )}
-          <p className="mt-1 text-[11px] text-surface-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-surface-muted-foreground">
             全网搜索用（申请自 tavily.com），用于图谱与时间轴的 Web 内容丰富，可留空
           </p>
         </div>
@@ -263,7 +263,7 @@ export default function SettingsPage() {
         {/* Model */}
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-surface-foreground mb-1.5">
-            <Cpu className="w-4 h-4" />
+            <Cpu className="w-4 h-4 text-brand-accent" />
             模型名称
           </label>
           <input
@@ -271,10 +271,10 @@ export default function SettingsPage() {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="gpt-4o-mini"
-            className="w-full h-10 px-3 bg-surface-card border border-border-default rounded-lg text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent"
+            className="w-full h-11 px-3.5 bg-surface-card/80 border border-border-default rounded-xl text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent/40 focus:border-brand-accent/50 transition-shadow duration-200"
             required
           />
-          <p className="mt-1 text-[11px] text-surface-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-surface-muted-foreground">
             常用模型：gpt-4o-mini / claude-sonnet-4-20250514 / qwen2.5:7b
           </p>
         </div>
@@ -282,12 +282,12 @@ export default function SettingsPage() {
         {/* Status */}
         {status && (
           <div
-            className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+            className={`flex items-start gap-2 p-3 rounded-xl border text-sm ${
               status.type === "success"
-                ? "bg-success/10 text-success"
+                ? "bg-success/10 border-success/30 text-success"
                 : status.type === "error"
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-surface-muted text-surface-foreground"
+                  ? "bg-destructive/10 border-destructive/30 text-destructive"
+                  : "bg-surface-muted border-border-default text-surface-foreground"
             }`}
           >
             {status.type === "success" ? (
@@ -304,7 +304,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={isSaving}
-            className="h-10 px-5 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            className="h-11 px-5 bg-brand-accent text-surface-card rounded-xl text-sm font-medium hover:bg-brand-accent-strong hover:shadow-[var(--shadow-glow-sm)] active:scale-[0.98] disabled:opacity-50 transition-all duration-200 cursor-pointer inline-flex items-center gap-1.5"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             保存配置
@@ -313,7 +313,7 @@ export default function SettingsPage() {
             type="button"
             onClick={handleTest}
             disabled={isTesting || (!apiKey && !hasExistingKey)}
-            className="h-10 px-5 border border-border-default text-surface-foreground rounded-lg text-sm font-medium hover:bg-surface-muted disabled:opacity-50 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            className="h-11 px-5 border border-border-default text-surface-foreground rounded-xl text-sm font-medium hover:bg-surface-muted disabled:opacity-50 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1.5"
           >
             {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
             测试连接

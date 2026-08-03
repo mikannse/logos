@@ -1,0 +1,21 @@
+{
+  "name": "Logos — 给你的好奇心装一张知识地图",
+  "short_name": "Logos",
+  "description": "搜索任意名词，自动构建关系图谱与演化时间轴",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

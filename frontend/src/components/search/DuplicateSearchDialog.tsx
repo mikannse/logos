@@ -44,7 +44,7 @@ export default function DuplicateSearchDialog({
       // pointer-events-none：遮罩不拦截背景（图谱）的缩放/拖拽事件，
       // 否则 fixed inset-0 覆盖整个视口，用户无法操作被挡住的图谱。
       // 卡片自身 pointer-events-auto 保留全部交互（按钮/点遮罩关闭）。
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/50 backdrop-blur-sm p-4 pointer-events-none"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-surface/70 backdrop-blur-md p-4 pointer-events-none animate-in fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -52,12 +52,14 @@ export default function DuplicateSearchDialog({
       aria-modal="true"
       aria-label={`"${entityName || query}" 已有历史结果`}
     >
-      <div className="w-full max-w-md bg-surface-card rounded-xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95 pointer-events-auto">
+      <div className="w-full max-w-md bg-surface-card/95 backdrop-blur-xl border border-border-default rounded-2xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95 pointer-events-auto">
         {/* Header */}
-        <div className="px-6 pt-6 pb-3">
-          <div className="flex items-center gap-2 text-surface-muted-foreground mb-1">
-            <History className="w-4 h-4" />
-            <span className="text-xs font-medium">搜索历史</span>
+        <div className="px-6 pt-6 pb-3 border-b border-border-default bg-gradient-to-b from-brand-accent/5 to-transparent">
+          <div className="flex items-center gap-2 text-brand-accent mb-1.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-accent/15">
+              <History className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-medium uppercase tracking-wider">搜索历史</span>
           </div>
           <h2 className="text-lg font-semibold text-surface-foreground font-heading">
             &ldquo;{entityName || query}&rdquo; 已有历史结果
@@ -69,17 +71,17 @@ export default function DuplicateSearchDialog({
         </div>
 
         {/* Actions */}
-        <div className="px-6 pb-6 pt-2 flex flex-col gap-2">
+        <div className="px-6 pb-6 pt-4 flex flex-col gap-2">
           <button
             onClick={onViewSnapshot}
-            className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 bg-brand-accent text-white rounded-lg text-sm font-medium hover:bg-brand-accent/90 transition-colors duration-150 cursor-pointer"
+            className="w-full inline-flex items-center justify-center gap-2 h-11 px-4 bg-brand-accent text-surface-card rounded-xl text-sm font-medium hover:bg-brand-accent-strong hover:shadow-[var(--shadow-glow-sm)] active:scale-[0.99] transition-all duration-200 cursor-pointer"
           >
             <History className="w-4 h-4" />
             查看历史快照
           </button>
           <button
             onClick={onReSearch}
-            className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 border border-border-default bg-transparent text-surface-foreground rounded-lg text-sm font-medium hover:bg-surface-muted transition-colors duration-150 cursor-pointer"
+            className="w-full inline-flex items-center justify-center gap-2 h-11 px-4 border border-border-default bg-transparent text-surface-foreground rounded-xl text-sm font-medium hover:bg-surface-muted/70 transition-colors duration-200 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             重新搜索
@@ -87,11 +89,11 @@ export default function DuplicateSearchDialog({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-border-default flex items-center justify-between text-xs text-surface-muted-foreground">
-          <span>Esc 关闭</span>
+        <div className="px-6 py-3 border-t border-border-default flex items-center justify-between text-xs text-surface-muted-foreground bg-surface-muted/30">
+          <span className="font-mono">Esc 关闭</span>
           <button
             onClick={onClose}
-            className="px-3 py-1 rounded-md hover:bg-surface-muted transition-colors cursor-pointer"
+            className="px-3 py-1 rounded-lg hover:bg-surface-muted transition-colors cursor-pointer hover:text-surface-foreground"
           >
             取消
           </button>

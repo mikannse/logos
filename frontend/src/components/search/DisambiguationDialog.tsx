@@ -98,7 +98,7 @@ export default function DisambiguationDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-surface/70 backdrop-blur-md p-4 animate-in fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleDismiss();
       }}
@@ -106,12 +106,14 @@ export default function DisambiguationDialog({
       aria-modal="true"
       aria-label={`"${query}" 多义消歧`}
     >
-      <div className="w-full max-w-lg bg-surface-card rounded-xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95">
+      <div className="w-full max-w-lg bg-surface-card/95 backdrop-blur-xl border border-border-default rounded-2xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95">
         {/* Header */}
-        <div className="px-6 pt-6 pb-3">
-          <div className="flex items-center gap-2 text-surface-muted-foreground mb-1">
-            <FileQuestion className="w-4 h-4" />
-            <span className="text-xs font-medium">多义匹配</span>
+        <div className="px-6 pt-6 pb-3 border-b border-border-default bg-gradient-to-b from-brand-accent/5 to-transparent">
+          <div className="flex items-center gap-2 text-brand-accent mb-1.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-accent/15">
+              <FileQuestion className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-medium uppercase tracking-wider">多义匹配</span>
           </div>
           <h2 className="text-lg font-semibold text-surface-foreground font-heading">
             &ldquo;{query}&rdquo; 有多个可能的意思
@@ -122,16 +124,16 @@ export default function DisambiguationDialog({
         </div>
 
         {/* Items list */}
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto px-2 pb-2">
+        <div ref={listRef} className="max-h-[50vh] overflow-y-auto px-2 py-2 space-y-1">
           {items.map((item, i) => (
             <button
               key={item.id}
               onClick={() => handleSelect(item)}
               onMouseEnter={() => setSelectedIndex(i)}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-100 cursor-pointer ${
+              className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-150 cursor-pointer ${
                 i === selectedIndex
-                  ? "bg-brand-accent/10 ring-1 ring-brand-accent/30"
-                  : "hover:bg-surface-muted"
+                  ? "bg-brand-accent/10 ring-1 ring-brand-accent/30 shadow-[var(--shadow-glow-sm)]"
+                  : "hover:bg-surface-muted/70"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -145,7 +147,7 @@ export default function DisambiguationDialog({
                         {item.label_en}
                       </span>
                     )}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-surface-muted-foreground">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted text-surface-muted-foreground border border-border-default">
                       {item.type_label || "实体"}
                     </span>
                   </div>
@@ -168,11 +170,11 @@ export default function DisambiguationDialog({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-border-default flex items-center justify-between text-xs text-surface-muted-foreground">
-          <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+        <div className="px-6 py-3 border-t border-border-default flex items-center justify-between text-xs text-surface-muted-foreground bg-surface-muted/30">
+          <span className="font-mono">↑↓ 选择 · Enter 确认 · Esc 关闭</span>
           <button
             onClick={handleDismiss}
-            className="px-3 py-1 rounded-md hover:bg-surface-muted transition-colors cursor-pointer"
+            className="px-3 py-1 rounded-lg hover:bg-surface-muted transition-colors cursor-pointer hover:text-surface-foreground"
           >
             取消
           </button>

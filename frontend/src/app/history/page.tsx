@@ -50,13 +50,15 @@ export default function HistoryPage() {
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-6 flex flex-col flex-1">
-      <div className="flex items-center gap-2 mb-5">
-        <History className="w-5 h-5 text-brand-accent" />
+      <div className="flex items-center gap-2.5 mb-5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-accent/15 text-brand-accent ring-1 ring-brand-accent/30">
+          <History className="w-4.5 h-4.5" />
+        </span>
         <h1 className="text-xl font-semibold text-surface-foreground font-heading">
           搜索历史
         </h1>
         {!isLoading && (
-          <span className="text-sm text-surface-muted-foreground">
+          <span className="text-sm px-2 py-0.5 rounded-md bg-surface-muted/80 border border-border-default text-surface-muted-foreground">
             {items.length} 条快照
           </span>
         )}
@@ -79,7 +81,7 @@ export default function HistoryPage() {
           {items.map((item) => (
             <li
               key={item.noun_id}
-              className="group px-4 py-3 bg-surface-card rounded-xl border border-border-default hover:border-brand-accent/40 hover:bg-surface-muted/40 transition-colors"
+              className="group px-4 py-3 bg-surface-card/80 backdrop-blur-sm rounded-xl border border-border-default hover:border-brand-accent/40 hover:bg-surface-muted/40 hover:shadow-[var(--shadow-glow-sm)] transition-all duration-200"
             >
               <div className="flex items-center gap-3">
                 <button
@@ -91,7 +93,7 @@ export default function HistoryPage() {
                     <span className="font-medium text-surface-foreground truncate">
                       {item.entity_name || item.query || item.noun_id}
                     </span>
-                    <span className="text-xs font-mono text-surface-muted-foreground shrink-0">
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded-md bg-surface-muted/80 text-surface-muted-foreground shrink-0 border border-border-default">
                       {item.noun_id}
                     </span>
                   </div>

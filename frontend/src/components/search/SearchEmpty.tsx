@@ -12,7 +12,7 @@ export default function SearchEmpty({ query }: { query: string }) {
               <a
                 key={term}
                 href={`/search?q=${encodeURIComponent(term)}`}
-                className="px-3 py-1 text-sm rounded-full border border-border-default text-surface-muted-foreground hover:text-surface-foreground transition-colors"
+                className="px-3 py-1 text-sm rounded-full border border-border-default bg-surface-card/60 text-surface-muted-foreground hover:border-brand-accent/60 hover:text-surface-foreground hover:bg-brand-accent/5 transition-colors duration-200 backdrop-blur-sm"
               >
                 {term}
               </a>

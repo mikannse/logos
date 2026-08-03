@@ -15,10 +15,10 @@ export default function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-      <div className="text-surface-muted-foreground mb-4">
+      <div className="text-surface-muted-foreground mb-4 animate-float">
         {icon || <FileSearch className="w-12 h-12" />}
       </div>
-      <h3 className="text-lg font-semibold text-surface-foreground">{title}</h3>
+      <h3 className="text-lg font-semibold text-surface-foreground font-heading">{title}</h3>
       {description && (
         <p className="mt-2 text-sm text-surface-muted-foreground max-w-sm">
           {description}
