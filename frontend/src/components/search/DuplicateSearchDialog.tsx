@@ -41,7 +41,10 @@ export default function DuplicateSearchDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/50 backdrop-blur-sm p-4"
+      // pointer-events-none：遮罩不拦截背景（图谱）的缩放/拖拽事件，
+      // 否则 fixed inset-0 覆盖整个视口，用户无法操作被挡住的图谱。
+      // 卡片自身 pointer-events-auto 保留全部交互（按钮/点遮罩关闭）。
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/50 backdrop-blur-sm p-4 pointer-events-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -49,7 +52,7 @@ export default function DuplicateSearchDialog({
       aria-modal="true"
       aria-label={`"${entityName || query}" 已有历史结果`}
     >
-      <div className="w-full max-w-md bg-surface-card rounded-xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95">
+      <div className="w-full max-w-md bg-surface-card rounded-xl shadow-[var(--shadow-modal)] overflow-hidden animate-in fade-in zoom-in-95 pointer-events-auto">
         {/* Header */}
         <div className="px-6 pt-6 pb-3">
           <div className="flex items-center gap-2 text-surface-muted-foreground mb-1">

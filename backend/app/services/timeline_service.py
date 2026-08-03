@@ -6,6 +6,7 @@
 - P793 重要事件（通过 P585 时间限定符提取年份）
 
 结果按年份排序、去重，最多返回 10 个里程碑，并写入 Redis 缓存。
+Wikidata 里程碑少于 5 个时，通过 AI Web Search + LLM 里程碑提取兜底合并（P6）。
 """
 
 import re
@@ -42,6 +43,10 @@ _QUALIFIER_CANDIDATES = ("P585", "P580", "P582")
 
 # 里程碑上限
 _MAX_MILESTONES = 10
+# P6: Wikidata 里程碑 < 该值时触发 AI Web 丰富兜底
+_AI_FALLBACK_TRIGGER = 5
+# AI 提取里程碑置信度（标注来源）
+_AI_MILESTONE_CONFIDENCE = 0.5
 
 
 def _extract_time_year(value: object) -> Optional[int]:
@@ -101,6 +106,7 @@ def _make_milestone(
     name: str,
     confidence: float = 0.8,
     lifecycle: bool = False,
+    source_url: str = "",
 ) -> dict:
     """构造里程碑 dict
 
@@ -111,7 +117,7 @@ def _make_milestone(
         "year": year,
         "title": title[:50],
         "description": f"{name} · {title}",
-        "source_url": "",
+        "source_url": source_url,
         "confidence": confidence,
         "_lifecycle": lifecycle,
     }
@@ -124,15 +130,25 @@ class TimelineService:
         self,
         wikidata: Optional[WikidataRepository] = None,
         cache: Optional[CacheService] = None,
+        web_search=None,
+        summarizer=None,
     ):
+        from app.ai.web_search import WebSearch
+        from app.ai.summarizer import Summarizer
+
         self.wikidata = wikidata or WikidataRepository()
         self.cache = cache or CacheService()
+        self.web_search = web_search or WebSearch()
+        self.summarizer = summarizer or Summarizer()
 
     async def get_timeline(self, noun_id: str) -> dict:
         """获取指定名词的演化时间轴
 
         从 Wikidata 声明提取带日期的事实，按年份排序，
         返回最多 10 个关键里程碑。
+
+        P6：Wikidata 里程碑 <5 时，通过 AI Web Search + LLM 里程碑提取兜底合并
+        （(year,title) 去重、Wikidata 优先、AI 标注低置信度 0.5、按年份排序、封顶 10）。
         """
         cache_key = f"timeline:{noun_id}"
         cached = await self.cache.get(cache_key)
@@ -147,6 +163,7 @@ class TimelineService:
 
         claims = entity.claims or {}
         name = entity.label or noun_id
+        source_url = entity.sitelink_zh or entity.sitelink_en or ""
         milestones: list[dict] = []
 
         # 直接时间属性（出生/逝世/成立/出版/解散等）—— 生命周期事件
@@ -154,7 +171,7 @@ class TimelineService:
             for claim in claims.get(prop, []):
                 year = _extract_mainsnak_year(claim)
                 if year is not None:
-                    milestones.append(_make_milestone(year, title, name, lifecycle=True))
+                    milestones.append(_make_milestone(year, title, name, lifecycle=True, source_url=source_url))
 
         # 实体型属性 + 时间限定符（重要事件/获奖/教育/任职等）
         entity_qids: list[str] = []
@@ -175,7 +192,7 @@ class TimelineService:
                 label = labels.get(qid, "")
                 if not label:
                     continue
-                milestones.append(_make_milestone(entity_years[qid], label, name))
+                milestones.append(_make_milestone(entity_years[qid], label, name, source_url=source_url))
 
         # 优先级：生命周期事件（出生/逝世/成立/解散等）全保留，
         # 实体里程碑（教育/任职/获奖）按年份补足剩余名额。
@@ -201,10 +218,55 @@ class TimelineService:
         for m in sorted(entity_m, key=lambda x: x["year"])[:remaining]:
             _dedup_add(m)
 
-        # 最终按年份排序，剥离内部标记字段
+        # P6: Wikidata 里程碑 <5 时，AI Web Search + 里程碑提取兜底合并
+        if len(selected) < _AI_FALLBACK_TRIGGER:
+            await self._merge_ai_milestones(name, source_url, selected, seen, entity_type=entity.type)
+
+        # 最终按年份排序，剥离内部标记字段，封顶上限
         selected.sort(key=lambda x: x["year"])
+        selected = selected[:_MAX_MILESTONES]
         selected = [{k: v for k, v in m.items() if not k.startswith("_")} for m in selected]
 
         result = {"noun_id": noun_id, "milestones": selected, "total": len(selected)}
         await self.cache.set(cache_key, result, ttl=3600)
         return result
+
+    async def _merge_ai_milestones(
+        self,
+        name: str,
+        source_url: str,
+        selected: list[dict],
+        seen: set[tuple],
+        entity_type: str | None = None,
+    ) -> None:
+        """AI Web Search + 里程碑提取兜底合并（(year,title) 去重、Wikidata 优先）
+
+        任何失败（LLM 未配置 / 搜索无摘要 / 异常）静默退化，不影响 Wikidata 结果。
+        """
+        # 内嵌去重函数（复用调用方 seen，Wikidata 已占的 (year,title) 不再加入）
+        def _dedup_add_local(item: dict) -> None:
+            key = (item["year"], item["title"])
+            if key not in seen:
+                seen.add(key)
+                selected.append(item)
+
+        try:
+            search_result = await self.web_search.search_and_extract(name, entity_type=entity_type)
+            if not search_result or not search_result.get("summary"):
+                return
+
+            ai_ms = await self.summarizer.extract_milestones(name, search_result["summary"])
+            if not ai_ms:
+                return
+
+            for ms in ai_ms:
+                item = _make_milestone(
+                    ms.year,
+                    ms.title,
+                    name,
+                    confidence=_AI_MILESTONE_CONFIDENCE,
+                    source_url=source_url,
+                )
+                _dedup_add_local(item)
+        except Exception:
+            return

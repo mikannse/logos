@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
   technology: "技术",
   event: "事件",
   organization: "组织",
+  category: "类别",
 };
 
 export default function GraphNodePanel({

@@ -65,11 +65,21 @@ export interface SearchResponse {
   disambiguation_groups: DisambiguationGroup[];
 }
 
+export type NodeType =
+  | "person"
+  | "entity"
+  | "event"
+  | "concept"
+  | "technology"
+  | "organization"
+  | "category";
+
 export interface GraphNode {
   id: string;
   label: string;
-  type: "person" | "entity" | "event";
+  type: NodeType;
   confidence: number;
+  relevance?: number; // 与中心实体的相关度（≠confidence 数据可靠度）
   summary?: string;
   image_url?: string;
   year?: number;
@@ -80,6 +90,7 @@ export interface GraphEdge {
   target: string;
   type: string;
   confidence: number;
+  relevance?: number;
   source_url: string;
   evidence?: string;
 }

@@ -2,7 +2,8 @@
 
 命名规范：
 - Node Label: PascalCase (`:Person`, `:Entity`, `:Event`)
-- Relationship Type: UPPER_SNAKE_CASE (`:RELATES_TO`)
+- Relationship Type: UPPER_SNAKE_CASE 存储（`:RELATES_TO` / `:CREATION`），
+  读取时经 _EDGE_TYPE_READ_MAP 归一为小写语义类型（creation/affiliation/...）
 - 属性: camelCase (`entityName`)
 """
 
@@ -13,6 +14,21 @@ from app.core.neo4j_client import Neo4jClient
 
 # 关系类型会直接拼入 Cypher（关系类型无法参数化），严格白名单校验
 _VALID_REL_TYPE = re.compile(r"^[A-Z_]{1,64}$")
+
+# P8: 读取时归一化为小写语义类型（前端 6 色板）；未知/related to → other
+_EDGE_TYPE_READ_MAP = {
+    "CREATION": "creation",
+    "AFFILIATION": "affiliation",
+    "INFLUENCE": "influence",
+    "COMPETITION": "competition",
+    "COLLABORATION": "collaboration",
+    "OTHER": "other",
+}
+
+
+def _normalize_edge_type(rel_type: str) -> str:
+    """Neo4j UPPER_SNAKE 关系类型 → 小写语义类型；未知/related to → other"""
+    return _EDGE_TYPE_READ_MAP.get((rel_type or "").upper(), "other")
 
 
 class Neo4jRepository:
@@ -76,6 +92,9 @@ class Neo4jRepository:
         Returns:
             {nodes: [...], edges: [...], has_more: bool}
         """
+        # depth 直接拼入 Cypher（`-[r*1..{depth}]-`），本地强校验防注入/越界
+        depth = int(depth) if isinstance(depth, (int, float, str)) and str(depth).lstrip("-").isdigit() else 1
+        depth = min(max(depth, 1), 3)
         try:
             driver = await self._driver
             async with driver.session() as session:
@@ -100,11 +119,14 @@ class Neo4jRepository:
                         if not eid:
                             continue
                         if eid not in node_map:
+                            relevance = props.get("relevance")
                             node_map[eid] = {
                                 "id": eid,
                                 "label": props.get("entityName", "") or "",
                                 "type": props.get("entityType", "entity") or "entity",
                                 "confidence": props.get("confidence", 0.0),
+                                # None 标记旧数据（无 relevance 属性），汇总后统一补默认值
+                                "relevance": relevance if relevance is not None else None,
                                 "summary": props.get("summary", "") or "",
                             }
                     for rel in path.relationships:
@@ -114,7 +136,8 @@ class Neo4jRepository:
                         dst = end.get("entityId", "")
                         if not src or not dst:
                             continue
-                        rel_type = (rel.type or "RELATED").lower().replace("_", " ")
+                        # P8: UPPER_SNAKE 读回归一为小写语义类型（未知/related to → other）
+                        rel_type = _normalize_edge_type(rel.type or "")
                         key = (src, dst, rel_type)
                         if key in seen_edges:
                             continue
@@ -124,9 +147,25 @@ class Neo4jRepository:
                             "target": dst,
                             "type": rel_type,
                             "confidence": rel.get("confidence", 0.0),
+                            "relevance": rel.get("relevance", 0.0) or 0.0,
                             "source_url": rel.get("source", "") or "",
                             "evidence": rel.get("evidence", "") or "",
                         })
+
+                # 旧数据 relevance 缺省值：中心 1.0 / 连通节点 0.5 / 孤立节点 0.1
+                connected: set[str] = set()
+                for e in edges:
+                    connected.add(e["source"])
+                    connected.add(e["target"])
+                for n in node_map.values():
+                    if n["relevance"] is not None:
+                        continue
+                    if n["id"] == entity_id:
+                        n["relevance"] = 1.0
+                    elif n["id"] not in connected:
+                        n["relevance"] = 0.1
+                    else:
+                        n["relevance"] = 0.5
 
                 return {
                     "nodes": list(node_map.values()),
@@ -137,19 +176,31 @@ class Neo4jRepository:
             return {"nodes": [], "edges": [], "has_more": False}
 
     async def get_timeline(self, entity_id: str) -> list[dict]:
-        """获取实体演化时间轴"""
-        # TODO: 实现时间轴查询
+        """获取实体演化时间轴
+
+        时间轴数据走 Redis 缓存（TimelineService 构建，见 timeline_service.py），
+        不落 Neo4j —— 此处保持空实现。
+        """
         return []
 
     async def upsert_entity(self, entity_data: dict) -> bool:
         """创建或更新实体（MERGE）
 
         Args:
-            entity_data: {id, name, type, confidence, summary, ...}
+            entity_data: {id, name, type, confidence, summary, relevance(可选), ...}
 
         Returns:
             是否成功
         """
+        params = {
+            "id": entity_data.get("id"),
+            "name": entity_data.get("name") or entity_data.get("label") or entity_data.get("id"),
+            "type": entity_data.get("type", "entity"),
+            "confidence": entity_data.get("confidence", 0.0),
+            "summary": entity_data.get("summary", ""),
+            # None → coalesce 保留库中已有值（未感知 relevance 的旧调用方不会将其冲掉）
+            "relevance": entity_data.get("relevance"),
+        }
         try:
             driver = await self._driver
             async with driver.session() as session:
@@ -160,9 +211,10 @@ class Neo4jRepository:
                         e.entityType = $type,
                         e.confidence = $confidence,
                         e.summary = $summary,
+                        e.relevance = coalesce($relevance, e.relevance),
                         e.updatedAt = timestamp()
                     """,
-                    **entity_data,
+                    **params,
                 )
                 return True
         except Exception:
@@ -176,19 +228,23 @@ class Neo4jRepository:
         confidence: float = 0.5,
         source_url: str = "",
         evidence: str = "",
+        relevance: Optional[float] = None,
     ) -> bool:
         """创建或更新关系
 
         Args:
             source_id: 源实体 ID
             target_id: 目标实体 ID
-            rel_type: 关系类型
+            rel_type: 关系类型（写入前归一为 UPPER_SNAKE；未知语义类型原样存储，
+                读取时归一为 other）
             confidence: 置信度
             source_url: 数据来源
             evidence: 证据
+            relevance: 与中心实体的相关度（None 时保留已有值）
         """
-        # 白名单校验：非法关系类型直接拒绝，避免 Cypher 注入
-        if not _VALID_REL_TYPE.match(rel_type or ""):
+        # P8: 关系类型归一 UPPER_SNAKE 后白名单校验（非法直接拒绝，避免 Cypher 注入）
+        rel_type = (rel_type or "").strip().upper().replace(" ", "_")
+        if not _VALID_REL_TYPE.match(rel_type):
             return False
 
         try:
@@ -202,6 +258,7 @@ class Neo4jRepository:
                     SET r.confidence = $confidence,
                         r.source = $source_url,
                         r.evidence = $evidence,
+                        r.relevance = coalesce($relevance, r.relevance),
                         r.updatedAt = timestamp()
                     RETURN count(a) AS found
                     """,
@@ -210,6 +267,7 @@ class Neo4jRepository:
                     confidence=confidence,
                     source_url=source_url,
                     evidence=evidence,
+                    relevance=relevance,
                 )
                 # 端点实体不存在时 MATCH 无行，MERGE 为 no-op —— 返回真实结果而非假成功
                 record = await result.single()

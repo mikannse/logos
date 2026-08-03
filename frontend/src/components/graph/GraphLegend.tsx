@@ -20,6 +20,7 @@ const NODE_TYPES: Record<string, { label: string; color: string; shape: string }
   technology: { label: "技术", color: "#0891B2", shape: "square" },
   event: { label: "事件", color: "#D97706", shape: "diamond" },
   organization: { label: "组织", color: "#DC2626", shape: "square" },
+  category: { label: "类别", color: "#94A3B8", shape: "square" },
 };
 
 const CONFIDENCE_LEGEND = [

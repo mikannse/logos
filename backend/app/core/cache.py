@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
+from app.core.net_utils import normalize_localhost
+
 
 class CacheService:
     """Redis 缓存服务"""
@@ -22,7 +24,8 @@ class CacheService:
             from app.config import settings
 
             redis_url = settings.redis_url
-        self.redis_url = redis_url
+        # Windows 下 localhost 优先解析为 ::1 导致连接超时，统一换成 127.0.0.1
+        self.redis_url = normalize_localhost(redis_url) if redis_url else redis_url
         self._client: Optional[aioredis.Redis] = None
 
     async def get_client(self) -> aioredis.Redis:

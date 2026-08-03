@@ -108,12 +108,16 @@ class ResolvedEndpoint:
 
                     def pinned(h, port, family=0, type=0, proto=0, flags=0):
                         if h == target_host and pinned_infos:
-                            # 返回预解析缓存的地址（可能多 IP），按请求过滤
+                            # 返回预解析缓存的地址（可能多 IP），按请求过滤。
+                            # 注：Windows + fake-ip DNS（如 Clash 198.18.x.x）下 getaddrinfo
+                            # 可能返回 socktype=0 / proto=0（"任意类型"）条目，而连接时请求
+                            # SOCK_STREAM(1)；故 0 视为任意匹配，避免缓存被滤空导致
+                            # "getaddrinfo returns an empty list"。family（IPv4/IPv6）保持严格匹配。
                             return [
                                 info for info in pinned_infos
                                 if (family == 0 or info[0] == family)
-                                and (type == 0 or info[1] == type)
-                                and (proto == 0 or info[2] == proto)
+                                and (type == 0 or info[1] == type or info[1] == 0)
+                                and (proto == 0 or info[2] == proto or info[2] == 0)
                             ]
                         return orig(h, port, family, type, proto, flags)
 

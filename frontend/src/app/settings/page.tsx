@@ -2,7 +2,7 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, AlertCircle, Server, Key, Cpu, Braces } from "lucide-react";
+import { ArrowLeft, Check, Loader2, AlertCircle, Server, Key, Cpu, Braces, Globe } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -46,6 +46,8 @@ export default function SettingsPage() {
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
   const [hasExistingKey, setHasExistingKey] = useState(false);
+  const [hasExistingTavilyKey, setHasExistingTavilyKey] = useState(false);
+  const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -61,6 +63,7 @@ export default function SettingsPage() {
         setModel(data.model || "");
         setProvider(data.provider || "");
         setHasExistingKey(data.has_api_key || false);
+        setHasExistingTavilyKey(data.has_tavily_api_key || false);
       })
       .catch(() => {
         setStatus({ type: "error", message: "无法连接后端服务" });
@@ -85,7 +88,7 @@ export default function SettingsPage() {
       const res = await fetch(`${API_BASE}/api/config/llm`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, api_key: apiKey, model, provider }),
+        body: JSON.stringify({ endpoint, api_key: apiKey, model, provider, tavily_api_key: tavilyApiKey }),
       });
 
       if (!res.ok) {
@@ -97,6 +100,8 @@ export default function SettingsPage() {
       setStatus({ type: "success", message: "配置已保存！" });
       setHasExistingKey(true);
       setApiKey(""); // Clear key field after save
+      setHasExistingTavilyKey(true);
+      setTavilyApiKey(""); // Clear Tavily key field after save
     } catch (err) {
       setStatus({
         type: "error",
@@ -232,6 +237,27 @@ export default function SettingsPage() {
           {hasExistingKey && !apiKey && (
             <p className="mt-1 text-[11px] text-success">✅ 已有 Key 配置，无需重复填写</p>
           )}
+        </div>
+
+        {/* Tavily API Key（全网搜索） */}
+        <div>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-surface-foreground mb-1.5">
+            <Globe className="w-4 h-4" />
+            Tavily API Key
+          </label>
+          <input
+            type="password"
+            value={tavilyApiKey}
+            onChange={(e) => setTavilyApiKey(e.target.value)}
+            placeholder={hasExistingTavilyKey ? "已配置（输入新 Key 覆盖）" : "输入 Tavily API Key..."}
+            className="w-full h-10 px-3 bg-surface-card border border-border-default rounded-lg text-sm text-surface-foreground placeholder:text-surface-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand-accent"
+          />
+          {hasExistingTavilyKey && !tavilyApiKey && (
+            <p className="mt-1 text-[11px] text-success">✅ 已有 Tavily Key 配置，无需重复填写</p>
+          )}
+          <p className="mt-1 text-[11px] text-surface-muted-foreground">
+            全网搜索用（申请自 tavily.com），用于图谱与时间轴的 Web 内容丰富，可留空
+          </p>
         </div>
 
         {/* Model */}

@@ -9,3 +9,4 @@ instructor
 neo4j-graphrag
 pytest
 pytest-asyncio
+defusedxml>=0.7.1

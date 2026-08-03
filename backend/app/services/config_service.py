@@ -19,6 +19,7 @@ class LLMConfig(BaseModel):
     api_key: str = Field(default="", description="API Key")
     model: str = Field(default="gpt-4o-mini", description="模型名称")
     provider: str = Field(default="openai", description="提供商标识（用于显示）")
+    tavily_api_key: str = Field(default="", description="Tavily 全网搜索 API Key")
 
 
 class ConfigService:

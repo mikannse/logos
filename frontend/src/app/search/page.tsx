@@ -288,10 +288,14 @@ function SearchContent() {
 
   if (!query) {
     return (
-      <EmptyState
-        title="输入一个名词开始探索"
-        description="在上方搜索框中输入名词，查看关系图谱与演化时间轴"
-      />
+      <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+        <div className="w-full max-w-lg">
+          <SearchBar />
+        </div>
+        <p className="mt-4 text-sm text-surface-muted-foreground">
+          输入名词，查看关系图谱与演化时间轴
+        </p>
+      </div>
     );
   }
 
