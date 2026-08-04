@@ -43,6 +43,25 @@ _QUALIFIER_CANDIDATES = ("P585", "P580", "P582")
 
 # 里程碑上限
 _MAX_MILESTONES = 10
+
+# 实体里程碑优先级分层（tier 越小越优先填充上限名额）：
+# 作品的出版/发表是实体演化的核心节点（如马克思 1848《共产党宣言》、
+# 1867《资本论》），其年份存在于作品自身条目（P577），优先级仅次于生命周期；
+# 重要事件/获奖次之；教育/任职再次；居住地信息量最低（避免 "1837 柏林"
+# 这类弱里程碑挤占代表作名额）。
+_ENTITY_PROP_TIERS = {
+    "P793": 2,   # 重要事件
+    "P166": 2,   # 获奖
+    "P69": 3,    # 就读学校
+    "P108": 3,   # 雇主
+    "P551": 4,   # 居住地
+}
+# 作品出版里程碑：中心实体的 P800（著名作品）→ 作品条目的 P577（出版时间）
+_WORK_PROP = "P800"
+_WORK_PUB_PROP = "P577"
+_WORK_TIER = 1
+_LIFECYCLE_TIER = 0
+_MAX_WORKS = 10
 # P6: Wikidata 里程碑 < 该值时触发 AI Web 丰富兜底
 _AI_FALLBACK_TRIGGER = 5
 # AI 提取里程碑置信度（标注来源）
@@ -106,12 +125,15 @@ def _make_milestone(
     name: str,
     confidence: float = 0.8,
     lifecycle: bool = False,
+    tier: int = 3,
     source_url: str = "",
 ) -> dict:
     """构造里程碑 dict
 
     lifecycle 标记是否属生命周期事件（出生/逝世/成立等），
     用于保证关键节点不被教育/任职等记录挤出上限。
+    tier 为实体里程碑的优先级分层（越小越优先填充上限名额，
+    作品出版 tier 1 < 重要事件/获奖 tier 2 < 教育/任职 tier 3 < 居住地 tier 4）。
     """
     return {
         "year": year,
@@ -120,6 +142,7 @@ def _make_milestone(
         "source_url": source_url,
         "confidence": confidence,
         "_lifecycle": lifecycle,
+        "_tier": tier,
     }
 
 
@@ -166,16 +189,19 @@ class TimelineService:
         source_url = entity.sitelink_zh or entity.sitelink_en or ""
         milestones: list[dict] = []
 
-        # 直接时间属性（出生/逝世/成立/出版/解散等）—— 生命周期事件
+        # 直接时间属性（出生/逝世/成立/出版/解散等）—— 生命周期事件（tier 0）
         for prop, title in _TIME_PROP_TITLES.items():
             for claim in claims.get(prop, []):
                 year = _extract_mainsnak_year(claim)
                 if year is not None:
-                    milestones.append(_make_milestone(year, title, name, lifecycle=True, source_url=source_url))
+                    milestones.append(_make_milestone(
+                        year, title, name, lifecycle=True, tier=_LIFECYCLE_TIER, source_url=source_url
+                    ))
 
-        # 实体型属性 + 时间限定符（重要事件/获奖/教育/任职等）
+        # 实体型属性 + 时间限定符（重要事件/获奖/教育/任职等，按属性 tier 分层）
         entity_qids: list[str] = []
         entity_years: dict[str, int] = {}
+        entity_tiers: dict[str, int] = {}
         for prop in _ENTITY_QUALIFIER_PROPS:
             for claim in claims.get(prop, []):
                 qid = _extract_entity_target(claim)
@@ -185,6 +211,7 @@ class TimelineService:
                 if year is not None and qid not in entity_years:
                     entity_qids.append(qid)
                     entity_years[qid] = year
+                    entity_tiers[qid] = _ENTITY_PROP_TIERS.get(prop, 3)
 
         if entity_qids:
             labels = await self.wikidata.get_entity_labels(entity_qids)
@@ -192,16 +219,36 @@ class TimelineService:
                 label = labels.get(qid, "")
                 if not label:
                     continue
-                milestones.append(_make_milestone(entity_years[qid], label, name, source_url=source_url))
+                milestones.append(_make_milestone(
+                    entity_years[qid], label, name,
+                    tier=entity_tiers.get(qid, 3), source_url=source_url
+                ))
 
-        # 优先级：生命周期事件（出生/逝世/成立/解散等）全保留，
-        # 实体里程碑（教育/任职/获奖）按年份补足剩余名额。
-        # 避免 "1955 逝世" 这类关键节点被大量教育记录挤出时间轴。
+        # 作品出版里程碑：中心实体 P800（著名作品）→ 作品条目 P577（出版时间）。
+        # 出版年存在于作品自身条目而非中心声明，需二次批量拉取；
+        # 拉取失败（网络/无该属性）静默跳过，不影响其他里程碑。
+        work_qids: list[str] = []
+        for claim in claims.get(_WORK_PROP, []):
+            qid = _extract_entity_target(claim)
+            if qid and qid not in work_qids:
+                work_qids.append(qid)
+        work_qids = work_qids[:_MAX_WORKS]
+        if work_qids:
+            work_years = await self.wikidata.get_claim_time_years(work_qids, _WORK_PUB_PROP)
+            work_labels = await self.wikidata.get_entity_labels(work_qids)
+            for qid in work_qids:
+                year = work_years.get(qid)
+                label = work_labels.get(qid, "")
+                if year is not None and label:
+                    milestones.append(_make_milestone(
+                        year, label, name, tier=_WORK_TIER, source_url=source_url
+                    ))
+
+        # 优先级：生命周期事件（tier 0）全保留，
+        # 其余里程碑按 (tier, 年份) 分层填充上限名额。
+        # 保证代表作（1848 宣言/1867 资本论）优先于居住地（1837 柏林）等弱记录。
         lifecycle = [m for m in milestones if m["_lifecycle"]]
         entity_m = [m for m in milestones if not m["_lifecycle"]]
-        remaining = _MAX_MILESTONES - len(lifecycle)
-        if remaining < 0:
-            remaining = 0
 
         seen: set[tuple] = set()
         selected: list[dict] = []
@@ -212,10 +259,12 @@ class TimelineService:
                 seen.add(key)
                 selected.append(item)
 
-        # 先加生命周期，再加实体（实体按年份排序，取最早的补位）
+        # 先加生命周期，再按 tier 优先级加实体里程碑（同 tier 内按年份升序）
         for m in sorted(lifecycle, key=lambda x: x["year"]):
             _dedup_add(m)
-        for m in sorted(entity_m, key=lambda x: x["year"])[:remaining]:
+        for m in sorted(entity_m, key=lambda x: (x["_tier"], x["year"])):
+            if len(selected) >= _MAX_MILESTONES:
+                break
             _dedup_add(m)
 
         # P6: Wikidata 里程碑 <5 时，AI Web Search + 里程碑提取兜底合并

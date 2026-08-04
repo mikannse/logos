@@ -20,11 +20,13 @@ _cache: CacheService | None = None
 
 # ---- Wikidata 关系属性白名单（P4：收敛去噪 + P8：可映射属性） ----
 
-# 强关联属性（P4 收敛白名单 + 人物核心关系扩展）——不含 P31/P279 分类属性。
+# 强关联属性（P4 收敛白名单 + 人物核心关系扩展）——不含 P31/P279 分类属性，
+# 也不含 P106（职业）：职业是"分类/概念"性质的值（如"革命家""政治人物"），
+# 作为图谱边信息量≈0，且目标易被误判为 person/event 实例（修复 4b 移除）。
 # 新增 P1327（合作者）/ P69（教育）/ P108（雇主）/ P102（政党）等人物常见属性，
 # 否则马克思的恩格斯（P1327）、柏林大学（P69）等核心关联会被白名单过滤掉。
 _STRONG_RELATION_PROPS = [
-    "P800", "P1416", "P106", "P463", "P910", "P127", "P355", "P1830",
+    "P800", "P1416", "P463", "P910", "P127", "P355", "P1830",
     "P1327", "P69", "P108", "P102",
 ]
 # P8 扩展可映射属性（追加，提供更多语义关系；含家庭/地理/研究领域等中性关联）
@@ -48,12 +50,26 @@ _RELATION_TYPE_MAP = {
     "P937": "other", "P101": "other",                                 # 工作地/研究领域
 }
 
+# Wikidata 属性 → 中文标签（边 evidence 的关系语义描述，如"合作者：恩格斯"）
+_PROP_LABEL_ZH = {
+    "P800": "著名作品", "P50": "作者", "P144": "改编自",
+    "P1327": "合作者", "P737": "受影响于", "P2860": "引用",
+    "P106": "职业", "P1416": "隶属", "P463": "成员",
+    "P127": "拥有者", "P355": "子公司", "P361": "所属部分",
+    "P69": "就读学校", "P108": "雇主", "P102": "政党",
+    "P910": "主分类", "P1830": "拥有物",
+    "P26": "配偶", "P19": "出生地", "P20": "逝世地",
+    "P937": "工作地", "P101": "研究领域",
+    "P31": "实例", "P279": "子类",
+}
+
 # 提取顺序：语义类型优先的属性在前（去重时先到先得），分类属性垫底
+# （不含 P106 职业：低信息量的概念值，见 _STRONG_RELATION_PROPS 注释）
 _RELATION_PROPS = [
     "P800", "P50", "P144",
     "P1327",                                   # 合作者（collaboration）
     "P737", "P2860",                            # 影响
-    "P106", "P1416", "P463", "P127", "P355", "P361",
+    "P1416", "P463", "P127", "P355", "P361",
     "P69", "P108", "P102",                      # 教育/雇主/政党（affiliation）
     "P910", "P1830", "P26", "P19", "P20", "P937", "P101",
     "P31", "P279",
@@ -83,6 +99,12 @@ _ENRICH_TRIGGER_THRESHOLD = 6
 _ENRICH_CACHE_TTL = 3600
 # 触发丰富判定的强相关阈值
 _STRONG_RELEVANCE_THRESHOLD = 0.6
+
+# Neo4j 图谱缓存有效期（7 天）：过期后视为未命中，从 Wikidata 重建。
+# 修复 3：此前 Neo4j 图谱无失效机制——类型映射/白名单等逻辑改进
+# 及 Wikidata 上游更新对已缓存实体永久不生效，且部分写入的残缺图谱
+# 会被无限命中。重建前删除中心实体的旧出边（见 build_graph_from_wikidata）。
+_GRAPH_NEO4J_TTL_MS = 7 * 24 * 3600 * 1000
 
 
 def _edge_type_for_prop(prop: str) -> str:
@@ -163,6 +185,28 @@ def _edge_relevance_for_prop(prop: str) -> float:
     if prop in _CATEGORY_PROPS:
         return _CATEGORY_RELEVANCE
     return _STRONG_RELEVANCE
+
+
+def _edge_confidence(prop: str, target: WikidataEntity) -> float:
+    """边置信度分级（替代旧的 0.7 硬编码）
+
+    分类属性（P31/P279）证据弱 → 0.5；
+    目标实体有 Wikipedia 站点链接（声明可交叉验证）→ 0.85；
+    无站点链接 → 0.6。
+    """
+    if prop in _CATEGORY_PROPS:
+        return 0.5
+    return 0.85 if (target.sitelink_zh or target.sitelink_en) else 0.6
+
+
+def _edge_evidence(prop: str, target: WikidataEntity) -> str:
+    """边证据：关系级真实描述（替代旧的中心实体描述占位符）
+
+    如 "合作者：弗里德里希·恩格斯"——声明来自 Wikidata 中心实体页面的该属性，
+    evidence 需让用户理解这条边为何存在，而非重复中心实体简介。
+    """
+    prop_label = _PROP_LABEL_ZH.get(prop, "关联")
+    return f"{prop_label}：{target.label or target.id}"
 
 
 # ---- P5: 正常搜索触发 Web 内容丰富（同步合并） ----
@@ -348,9 +392,10 @@ async def get_graph(
     except Exception:
         pass  # 缓存不可用时降级 — 不影响主逻辑
 
-    # Try Neo4j
+    # Try Neo4j — 含新鲜度检查：无 graphBuiltAt（旧数据）或超期 → 视为未命中，
+    # 走 Wikidata 重建，避免陈旧图谱永久冻结（修复 3）
     try:
-        result = await repo.get_graph(noun_id, depth)
+        result = await repo.get_graph(noun_id, depth, max_age_ms=_GRAPH_NEO4J_TTL_MS)
         nodes = result.get("nodes", [])
         if nodes:
             edges = result.get("edges", [])
@@ -401,6 +446,12 @@ async def build_graph_from_wikidata(
 
     if not center_entity:
         return {"nodes": [], "edges": [], "has_more": False}
+
+    # 重建前清理陈旧出边（修复 3）：删除上次构建残留的旧关系，
+    # 避免旧逻辑数据（占位符 evidence、过期类型/白名单）与新构建累积混淆，
+    # 同时让"部分写入中断"的图谱在下次触发重建时自愈。
+    # 入边属于其他实体的图谱，不删除。
+    await neo4j.delete_outgoing_relations(entity_id)
 
     has_sitelink = bool(center_entity.sitelink_zh or center_entity.sitelink_en)
 
@@ -457,14 +508,19 @@ async def build_graph_from_wikidata(
 
         edge_relevance = _edge_relevance_for_prop(prop)
         edge_type = _edge_type_for_prop(prop)
+        edge_confidence = _edge_confidence(prop, related)
         edge = {
             "source": entity_id,
             "target": qid,
             "type": edge_type,
-            "confidence": 0.7,
+            "confidence": edge_confidence,
             "relevance": edge_relevance,
-            "source_url": center_entity.sitelink_zh or center_entity.sitelink_en or "",
-            "evidence": center_entity.description or "",
+            # 来源指向目标实体的 Wikipedia 页面（用户可验证该端点），中心页面兜底
+            "source_url": (
+                related.sitelink_zh or related.sitelink_en
+                or center_entity.sitelink_zh or center_entity.sitelink_en or ""
+            ),
+            "evidence": _edge_evidence(prop, related),
         }
         edges.append(edge)
 
@@ -473,7 +529,7 @@ async def build_graph_from_wikidata(
             source_id=entity_id,
             target_id=qid,
             rel_type=edge_type.upper(),
-            confidence=0.7,
+            confidence=edge_confidence,
             source_url=edge["source_url"],
             evidence=edge["evidence"],
             relevance=edge_relevance,
@@ -515,4 +571,7 @@ async def build_graph_from_wikidata(
                     edges.append(e)
                     seen_edges.add(key)
 
+    # 全部 upsert 成功后再标记构建完成时间（修复 3 新鲜度基准）；
+    # 构建中途异常则不标记，get_graph 下次视为未命中并重新构建。
+    await neo4j.mark_graph_built(entity_id)
     return {"nodes": nodes, "edges": edges, "has_more": truncated}

@@ -78,7 +78,7 @@ class Neo4jRepository:
             return []
 
     async def get_graph(
-        self, entity_id: str, depth: int = 1
+        self, entity_id: str, depth: int = 1, max_age_ms: Optional[int] = None
     ) -> dict[str, Any]:
         """获取实体关联图谱
 
@@ -88,6 +88,10 @@ class Neo4jRepository:
         Args:
             entity_id: 实体 ID
             depth: 关联深度（1-3）
+            max_age_ms: 图谱新鲜度上限（毫秒）。仅返回 graphBuiltAt 之后
+                构建的图谱；None 表示不过期。无 graphBuiltAt 属性（旧数据）
+                或已过期 → 返回空，由调用方触发 Wikidata 重建（避免陈旧图
+                谱永久冻结，修复 3）。
 
         Returns:
             {nodes: [...], edges: [...], has_more: bool}
@@ -99,12 +103,14 @@ class Neo4jRepository:
             driver = await self._driver
             async with driver.session() as session:
                 query = f"""
-                MATCH path = (center:Entity {{entityId: $entity_id}})
-                -[r*1..{depth}]-(related)
+                MATCH (center:Entity {{entityId: $entity_id}})
+                WHERE center.graphBuiltAt IS NOT NULL
+                  AND ($max_age_ms IS NULL OR center.graphBuiltAt > timestamp() - $max_age_ms)
+                MATCH path = (center)-[r*1..{depth}]-(related)
                 RETURN path
                 LIMIT 200
                 """
-                result = await session.run(query, entity_id=entity_id)
+                result = await session.run(query, entity_id=entity_id, max_age_ms=max_age_ms)
                 records = await result.fetch(200)
 
                 node_map: dict[str, dict] = {}
@@ -272,6 +278,48 @@ class Neo4jRepository:
                 # 端点实体不存在时 MATCH 无行，MERGE 为 no-op —— 返回真实结果而非假成功
                 record = await result.single()
                 return bool(record and record["found"] > 0)
+        except Exception:
+            return False
+
+    async def mark_graph_built(self, entity_id: str) -> bool:
+        """标记实体图谱构建完成时间（get_graph 新鲜度判定基准）
+
+        在 build_graph_from_wikidata 全部 upsert 成功后调用；
+        未标记（构建中途失败）时 get_graph 视为未命中，下次自动重建。
+        """
+        try:
+            driver = await self._driver
+            async with driver.session() as session:
+                await session.run(
+                    """
+                    MATCH (e:Entity {entityId: $id})
+                    SET e.graphBuiltAt = timestamp()
+                    """,
+                    id=entity_id,
+                )
+                return True
+        except Exception:
+            return False
+
+    async def delete_outgoing_relations(self, entity_id: str) -> bool:
+        """删除实体的全部出边（过期重建前清理陈旧图谱）
+
+        本系统图谱构建的边恒以中心实体为 source（Wikidata 白名单边与
+        Web 丰富边均是如此），故重建前删除出边即可清掉陈旧关系，
+        避免与旧逻辑残留的边（如占位符 evidence、过期类型映射）累积混淆。
+        其他实体指向本实体的入边属于对方图谱，不删除。
+        """
+        try:
+            driver = await self._driver
+            async with driver.session() as session:
+                await session.run(
+                    """
+                    MATCH (e:Entity {entityId: $id})-[r]->()
+                    DELETE r
+                    """,
+                    id=entity_id,
+                )
+                return True
         except Exception:
             return False
 

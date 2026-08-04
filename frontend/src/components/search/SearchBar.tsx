@@ -43,8 +43,12 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
     }
 
     let cancelled = false;
+    // 修复 6：StrictMode 双挂载/连续输入时中止过期请求，避免重复调用后端
+    const controller = new AbortController();
 
-    fetch(`${API_BASE}/api/nouns/suggest?q=${encodeURIComponent(trimmed)}`)
+    fetch(`${API_BASE}/api/nouns/suggest?q=${encodeURIComponent(trimmed)}`, {
+      signal: controller.signal,
+    })
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
@@ -60,11 +64,12 @@ export default function SearchBar({ initialQuery = "" }: { initialQuery?: string
         setShowSuggestions(unique.length > 0);
         setSelectedIdx(-1);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         if (!cancelled) setSuggestions([]);
       });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [debouncedQuery]);
 
   const navigateToSearch = useCallback(

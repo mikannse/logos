@@ -74,6 +74,12 @@ class TestDescriptionKeywords:
     def test_unknown_returns_entity(self):
         assert _type_from_description("zzz qqq") == "entity"
 
+    def test_profession_class_qid_maps_to_concept(self):
+        """修复 4a：职业/专业类 P31 直映射 concept（革命家 P31=Q12737077、政治人物 P31=Q28640）"""
+        assert _map_wikidata_type("Q3242115", ["Q12737077"], description="参与革命的人") == "concept"
+        assert _map_wikidata_type("Q82955", ["Q28640"], description="參與政治的人物、政府官員") == "concept"
+        assert _map_wikidata_type("Qx", ["Q4167410"]) == "concept"  # 消歧义页
+
 
 # ---------- _get_entity_detail 集成（fake HTTP） ----------
 

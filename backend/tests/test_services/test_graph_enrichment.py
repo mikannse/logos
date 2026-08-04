@@ -66,6 +66,12 @@ class FakeNeo4j:
         self.relations.append(kwargs)
         return True
 
+    async def delete_outgoing_relations(self, entity_id):
+        return True
+
+    async def mark_graph_built(self, entity_id):
+        return True
+
 
 class FakeCache:
     def __init__(self):
@@ -130,7 +136,7 @@ def rich_center() -> dict:
     # 中心实体：organization，关联 6 个不同类型节点，混合边类型
     center_claims = {
         "P800": [item_claim("Q1001"), item_claim("Q1002")],  # creation 产品
-        "P106": [item_claim("Q1003")],                        # affiliation 职业
+        "P108": [item_claim("Q1003")],                        # affiliation 雇主
         "P1416": [item_claim("Q1004")],                       # affiliation 关联机构
         "P1327": [item_claim("Q1005")],                       # collaboration 合作者
         "P737": [item_claim("Q1006")],                        # influence 影响
@@ -139,7 +145,7 @@ def rich_center() -> dict:
         "Q312": make_entity("Q312", "苹果公司", center_claims, type_="organization"),
         "Q1001": make_entity("Q1001", "产品1", {}, type_="technology"),
         "Q1002": make_entity("Q1002", "产品2", {}, type_="technology"),
-        "Q1003": make_entity("Q1003", "员工", {}, type_="person"),
+        "Q1003": make_entity("Q1003", "雇主", {}, type_="person"),
         "Q1004": make_entity("Q1004", "机构", {}, type_="organization"),
         "Q1005": make_entity("Q1005", "合作者", {}, type_="person"),
         "Q1006": make_entity("Q1006", "创始人", {}, type_="person"),

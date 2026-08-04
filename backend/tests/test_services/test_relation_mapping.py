@@ -122,6 +122,12 @@ class TestBuildGraphEdgeTypes:
             self.relations.append(kw)
             return True
 
+        async def delete_outgoing_relations(self, entity_id):
+            return True
+
+        async def mark_graph_built(self, entity_id):
+            return True
+
     @pytest.mark.asyncio
     async def test_edge_type_mapped_and_stored_upper_snake(self):
         """P800 创作 → edge.type='creation'，Neo4j 存 'CREATION'"""

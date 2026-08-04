@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +15,9 @@ import httpx
 
 WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ENTITY_URL = "https://www.wikidata.org/wiki/Special:EntityData"
+
+# 时间值解析：ISO 8601 格式 "+1879-03-14T00:00:00Z" / "-0445-03-14T00:00:00Z"
+_TIME_YEAR_RE = re.compile(r"^[+-]?(\d{4,})")
 
 
 @dataclass
@@ -65,7 +69,7 @@ def _type_from_description(description: str) -> str:
     # 按优先级检查：person > organization > technology > event > concept
     if any(k in text for k in (
         "学家", "作家", "演员", "歌手", "运动员", "政治家", "企业家",
-        "科学家", "创始人", "人物", "physicist", "scientist", "writer",
+        "科学家", "创始人", "physicist", "scientist", "writer",
         "actor", "singer", "athlete", "politician", "founder", "human",
         "author", "musician", "artist", "professor",
     )):
@@ -134,6 +138,11 @@ _ENTITY_TYPE_MAP = {
     "Q15416": "concept",                # 电视节目
     "Q5398426": "concept",              # 电视系列节目
     "Q25118": "concept",                # 印刷品（百科文章）
+    # 职业/专业类（修复：革命家 Q3242115 P31=Q12737077、政治人物 Q82955 P31=Q28640
+    # 是"职业"概念而非 person/event 实例；否则 P106 职业值落入描述关键词兜底误判）
+    "Q12737077": "concept",             # 职业
+    "Q28640": "concept",                # 专业（profession）
+    "Q4167410": "concept",              # 消歧义页（disambiguation）
     # 说明：Q16970（教堂建筑）/ Q11755880（居住建筑物）这类场所属性未纳入映射表，
     # 走描述关键词 / entity 兜底，避免误标组织。
 }
@@ -350,6 +359,50 @@ class WikidataRepository:
     async def get_entity_by_qid(self, qid: str) -> Optional[WikidataEntity]:
         """通过 Q ID 获取实体（中英双语）"""
         return await self._get_entity_detail(qid, language="zh")
+
+    async def get_claim_time_years(self, qids: list[str], prop: str) -> dict[str, int]:
+        """批量获取实体某时间属性的年份（轻量，仅 claims，一次 HTTP 调用）
+
+        用于作品出版年（P577）等场景：时间值存在于关联实体自身条目
+        （如作品的 P577 在作品条目里，而非中心实体的声明中）。
+
+        Args:
+            qids: 实体 Q ID 列表（最多 50 个，超出截断）
+            prop: 时间属性 ID（如 "P577"）
+
+        Returns:
+            {qid: year} 映射；同一属性多个时间值取最早年份，无该属性/解析失败的不在结果中
+        """
+        if not qids:
+            return {}
+        params = {
+            "action": "wbgetentities",
+            "ids": "|".join(qids[:50]),
+            "props": "claims",
+            "format": "json",
+        }
+        try:
+            response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+            result: dict[str, int] = {}
+            for qid, entity_data in data.get("entities", {}).items():
+                years = []
+                for claim in entity_data.get("claims", {}).get(prop, []):
+                    mainsnak = claim.get("mainsnak", {})
+                    if mainsnak.get("datatype") != "time":
+                        continue
+                    value = mainsnak.get("datavalue", {}).get("value", {})
+                    time_str = value.get("time", "") if isinstance(value, dict) else ""
+                    m = _TIME_YEAR_RE.match(time_str)
+                    if m:
+                        years.append(int(m.group(1)))
+                if years:
+                    result[qid] = min(years)
+            return result
+        except httpx.HTTPError as e:
+            print(f"Wikidata claim time batch error: {e}")
+            return {}
 
     async def get_entity_labels(self, qids: list[str], language: str = "zh") -> dict[str, str]:
         """批量获取实体标签（轻量，仅 labels，避免拉全量 claims）

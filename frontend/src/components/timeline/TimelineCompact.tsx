@@ -38,14 +38,22 @@ export default function TimelineCompact({
     if (!nounId) return;
     setIsLoading(true);
 
-    fetchTimeline(nounId)
+    // 修复 6：StrictMode 双挂载时首个 effect 的请求被 abort，避免重复调用
+    const controller = new AbortController();
+
+    fetchTimeline(nounId, controller.signal)
       .then((data) => {
         const ms = data.milestones || [];
         setMilestones(ms);
         onLoadedRef.current?.(ms);
       })
-      .catch(() => setMilestones([]))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setMilestones([]);
+      })
       .finally(() => setIsLoading(false));
+
+    return () => controller.abort();
   }, [nounId, externalMilestones]);
 
   const handleMilestoneClick = (index: number, milestone: Milestone) => {

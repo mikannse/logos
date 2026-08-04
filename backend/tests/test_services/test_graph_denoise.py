@@ -16,6 +16,8 @@ from app.api.graph import (
     _STRONG_RELATION_PROPS,
     _RELATED_LIMIT,
     _NODE_TYPE_PRIORITY,
+    _edge_evidence,
+    _edge_confidence,
 )
 from app.repositories.wikidata_repo import WikidataEntity
 
@@ -57,6 +59,12 @@ class FakeNeo4j:
         self.relations.append(kwargs)
         return True
 
+    async def delete_outgoing_relations(self, entity_id):
+        return True
+
+    async def mark_graph_built(self, entity_id):
+        return True
+
 
 def build_apple_graph():
     """中心 Q312 苹果公司：
@@ -86,11 +94,18 @@ class TestRelationPropsWhitelist:
     def test_strong_whitelist_excludes_p31_p279(self):
         assert "P31" not in _STRONG_RELATION_PROPS
         assert "P279" not in _STRONG_RELATION_PROPS
-        # P4 收敛白名单 + 人物核心关系扩展（合作者/教育/雇主/政党）
+        # P4 收敛白名单 + 人物核心关系扩展（合作者/教育/雇主/政党）；
+        # 修复 4b：P106（职业）已移除——"革命家/政治人物"等职业概念值
+        # 作为图谱边信息量≈0，且目标易被误判为 person/event 实例
+        assert "P106" not in _STRONG_RELATION_PROPS
         assert _STRONG_RELATION_PROPS == [
-            "P800", "P1416", "P106", "P463", "P910", "P127", "P355", "P1830",
+            "P800", "P1416", "P463", "P910", "P127", "P355", "P1830",
             "P1327", "P69", "P108", "P102",
         ]
+
+    def test_relation_props_excludes_p106(self):
+        """修复 4b：P106 职业不在提取属性列表中（职业概念不进图谱）"""
+        assert "P106" not in _RELATION_PROPS
 
     def test_category_props_present(self):
         assert set(_CATEGORY_PROPS) == {"P31", "P279"}
@@ -192,3 +207,86 @@ class TestTypePriorityOrdering:
         assert related[0]["id"] == "Q19837"
         assert related[0]["type"] == "person"
         assert all(n["id"] != "Q4830453" for n in result["nodes"])
+
+
+class TestEdgeEvidenceAndRebuild:
+    """修复 1：边 evidence/confidence 关系级真实值；修复 3：重建清理旧边 + 标记构建时间"""
+
+    @pytest.mark.asyncio
+    async def test_edge_evidence_is_relation_level_not_center_description(self):
+        """边 evidence 应为关系语义描述（"著名作品：iPhone"），而非中心实体描述占位符"""
+        wikidata = FakeWikidata(build_apple_graph())
+        neo4j = FakeNeo4j()
+        result = await build_graph_from_wikidata("Q312", wikidata, neo4j, depth=1)
+
+        edge = next(e for e in result["edges"] if e["target"] == "Q1416")
+        assert edge["evidence"] == "著名作品：iPhone"
+        assert edge["evidence"] != "苹果公司"  # 不再是中心描述
+
+    @pytest.mark.asyncio
+    async def test_edge_confidence_graded_by_sitelink_and_category(self):
+        """边 confidence 分级：无站点链接 0.6，分类属性 0.5（替代旧硬编码 0.7）"""
+        # 构造：强关联 target 有 sitelink（0.85）、无 sitelink（0.6）、分类（0.5）
+        center_claims = {
+            "P800": [item_claim("Q100")],     # 强关联，无 sitelink → 0.6
+            "P355": [item_claim("Q200")],     # 强关联，有 sitelink → 0.85
+            "P31": [item_claim("Q300")],      # 分类 → 0.5
+        }
+        entities = {
+            "Q1": make_entity("Q1", "中心", center_claims),
+            "Q100": make_entity("Q100", "作品A", {}),
+            "Q200": make_entity("Q200", "子公司B", {}),
+            "Q300": make_entity("Q300", "类别C", {}),
+        }
+        entities["Q200"].sitelink_en = "https://en.wikipedia.org/wiki/B"
+        wikidata = FakeWikidata(entities)
+        neo4j = FakeNeo4j()
+        result = await build_graph_from_wikidata("Q1", wikidata, neo4j, depth=1)
+
+        conf = {e["target"]: e["confidence"] for e in result["edges"]}
+        assert conf["Q100"] == 0.6
+        assert conf["Q200"] == 0.85
+        assert conf["Q300"] == 0.5
+        # 写库的 confidence 与响应一致
+        stored = {r["target_id"]: r["confidence"] for r in neo4j.relations}
+        assert stored["Q100"] == 0.6 and stored["Q200"] == 0.85 and stored["Q300"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_rebuild_clears_stale_edges_and_marks_built(self):
+        """修复 3：重建前清理旧出边；构建完成后标记 graphBuiltAt"""
+        class TrackingNeo4j(FakeNeo4j):
+            def __init__(self):
+                super().__init__()
+                self.deleted = []
+                self.marked = []
+
+            async def delete_outgoing_relations(self, entity_id):
+                self.deleted.append(entity_id)
+                return True
+
+            async def mark_graph_built(self, entity_id):
+                self.marked.append(entity_id)
+                return True
+
+        wikidata = FakeWikidata(build_apple_graph())
+        neo4j = TrackingNeo4j()
+        result = await build_graph_from_wikidata("Q312", wikidata, neo4j, depth=1)
+
+        # 中心构建前清旧边，构建完成后标记时间
+        assert neo4j.deleted == ["Q312"]
+        assert neo4j.marked == ["Q312"]
+        assert result["edges"], "重建后应有边"
+
+    def test_edge_evidence_helper_produces_prop_label(self):
+        """_edge_evidence 使用属性中文标签（未知属性回退"关联"）"""
+        target = make_entity("Q1", "恩格斯", {})
+        assert _edge_evidence("P1327", target) == "合作者：恩格斯"
+        assert _edge_evidence("P999", target) == "关联：恩格斯"
+
+    def test_edge_confidence_helper_grades(self):
+        """_edge_confidence 三档：分类 0.5 / 有 sitelink 0.85 / 无 0.6"""
+        target = make_entity("Q1", "X", {})
+        assert _edge_confidence("P31", target) == 0.5
+        assert _edge_confidence("P800", target) == 0.6
+        target.sitelink_en = "https://en.wikipedia.org/wiki/X"
+        assert _edge_confidence("P800", target) == 0.85

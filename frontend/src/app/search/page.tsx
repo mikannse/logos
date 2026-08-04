@@ -18,6 +18,7 @@ import {
   searchNouns,
   fetchGraph,
   fetchHistorySnapshot,
+  fetchNoun,
   saveHistorySnapshot,
   GraphNode,
   GraphEdge,
@@ -173,11 +174,29 @@ function SearchContent() {
       setGraphRefreshKey((k) => k + 1); // 同实体重搜也强制重新拉取
       // 由消歧弹窗选择/忽略后进入：不重复提示"已有历史结果"（用户刚主动选择了该实体）
       if (!fromDisambig) checkDuplicate(query, query);
+      // QID 直搜且未带实体名时异步回填名称（修复 7）：
+      // 避免历史快照/面包屑保存"Q937"这类裸 QID 作为实体名。
+      // 用 name 缺省（非空说明用户已选实体）与 entityIdRef 防抖去重；
+      // 回填后不应重入本 effect（仅更新 entityLabel）。
+      if (!name) {
+        let cancelled = false;
+        fetchNoun(query)
+          .then((d) => {
+            if (cancelled) return;
+            if (d?.name) {
+              setEntityLabel(d.name);
+              pendingSnapshotRef.current = { entityId: query, query: d.name };
+            }
+          })
+          .catch(() => {});
+        return () => { cancelled = true; };
+      }
       return;
     }
     if (name) return;
 
     let cancelled = false;
+    const controller = new AbortController();
     setIsSearching(true);
     setHasNoResults(false);
     setFuzzyResults([]);
@@ -185,7 +204,7 @@ function SearchContent() {
     // 图谱由 graph effect 按 entityId 管理：切换到新实体时 graph effect 会重新拉取，
     // 同一实体重搜时保留现有图谱（否则会永久显示"暂无图谱数据"）。
 
-    searchNouns(query)
+    searchNouns(query, controller.signal)
       .then(async (data) => {
         if (cancelled) return;
 
@@ -222,7 +241,8 @@ function SearchContent() {
         }
 
         const res = await fetch(
-          `${API_BASE}/api/nouns/fuzzy?q=${encodeURIComponent(query)}`
+          `${API_BASE}/api/nouns/fuzzy?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal }
         );
         const fuzzy = await res.json();
         if (cancelled) return;
@@ -237,10 +257,12 @@ function SearchContent() {
           setGraphEdges([]);
         }
       })
-      .catch(() => { if (!cancelled) setHasNoResults(true); })
+      .catch((err) => { if (!cancelled && !(err instanceof DOMException && err.name === "AbortError")) setHasNoResults(true); })
       .finally(() => { if (!cancelled) setIsSearching(false); });
 
-    return () => { cancelled = true; };
+    // 修复 6：清理时中止进行中的搜索请求（StrictMode 双挂载时首个 effect
+    // 的请求被取消，避免同一接口被重复调用两次打到后端/Wikidata）
+    return () => { cancelled = true; controller.abort(); };
   }, [query, name, fromDisambig, checkDuplicate]);
 
   const handleNodeClick = useCallback((node: GraphNode) => {
@@ -348,7 +370,9 @@ function SearchContent() {
 
       {/* Search bar */}
       <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-2">
-        <SearchBar initialQuery={displayTitle} />
+        {/* key={entityId}：实体切换时重挂载 SearchBar，回填已解析实体名
+            （修复 5：消歧选择后搜索框不再残留旧查询词，建议下拉也不残留） */}
+        <SearchBar key={entityId || query} initialQuery={displayTitle} />
       </div>
 
       {/* Results header + filters */}

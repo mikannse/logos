@@ -164,9 +164,10 @@ export function deleteHistorySnapshot(nounId: string): Promise<{ ok: boolean; no
   );
 }
 
-export async function searchNouns(query: string): Promise<SearchResponse> {
+export async function searchNouns(query: string, signal?: AbortSignal): Promise<SearchResponse> {
   return request<SearchResponse>(
-    `/api/nouns?q=${encodeURIComponent(query)}`
+    `/api/nouns?q=${encodeURIComponent(query)}`,
+    { signal }
   );
 }
 
@@ -180,9 +181,10 @@ export async function fetchGraph(
 }
 
 export async function fetchTimeline(
-  nounId: string
+  nounId: string,
+  signal?: AbortSignal
 ): Promise<TimelineResponse> {
-  return request<TimelineResponse>(`/api/nouns/${nounId}/timeline`);
+  return request<TimelineResponse>(`/api/nouns/${nounId}/timeline`, { signal });
 }
 
 export async function fetchNoun(nounId: string): Promise<SearchResult> {
