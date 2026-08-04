@@ -273,8 +273,14 @@ function SearchContent() {
     // handled by D3 tooltip
   }, []);
 
+  // V2c: 时间轴选中年份 → 图谱联动淡化（null = 全时段）
+  const [activeYear, setActiveYear] = useState<number | null>(null);
+
+  const handleYearChange = useCallback((year: number | null) => {
+    setActiveYear(year);
+  }, []);
+
   const handleExploreGraph = useCallback((nodeId: string) => {
-    // Add current entity to breadcrumb before switching
     setBreadcrumb((prev) => {
       const next = [...prev, { id: entityId, label: entityLabel || entityId }];
       // Max depth: 3 layers
@@ -285,16 +291,17 @@ function SearchContent() {
     setEntityLabel(nodeId);
   }, [entityId, entityLabel]);
 
+  // V3b: 双击节点 → 展开其图谱（切换中心），复用 handleExploreGraph
+  const handleExpandNode = useCallback((node: GraphNode) => {
+    handleExploreGraph(node.id);
+  }, [handleExploreGraph]);
+
   const navigateToFuzzy = (id: string, label: string) => {
     setEntityId(id);
     setEntityLabel(label);
     setHasNoResults(false);
     setFuzzyResults([]);
   };
-
-  const handleYearChange = useCallback((year: number | null) => {
-    // Future: filter graph by year
-  }, []);
 
   const handleBreadcrumbNavigate = useCallback(
     (item: { id: string; label: string }, index: number) => {
@@ -442,6 +449,8 @@ function SearchContent() {
                 edges={graphEdges}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
+                onExpandNode={handleExpandNode}
+                activeYear={activeYear}
               />
             ) : (
               <div className="grid-backdrop-auto flex items-center justify-center h-full min-h-[450px]">

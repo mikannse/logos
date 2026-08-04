@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Query
@@ -93,12 +94,18 @@ _CENTER_RELEVANCE = 1.0
 _STRONG_RELEVANCE = 0.7
 _CATEGORY_RELEVANCE = 0.2
 
+# V3a: 多跳 relevance 跳衰减（hop≥2 的边 relevance = 衰减基数 × 属性制基数）
+# hop-1 保留 prop 制（强 0.7 / 分类 0.2，见 _edge_relevance_for_prop）；
+# hop≥2 在 prop 制基础上按跳衰减，避免分类边在 hop≥2 升到 0.7。
+_HOP_RELEVANCE_DECAY = {2: 0.5, 3: 0.3}
+# V3a: hop≥2 仅展开强关系属性（决策②）——丢弃 P31/P279 分类与 P19/P20/P26/P937/P101
+# 地理/家庭/领域弱属性，防止 hop-2/3 堆满 category 噪音节点
+_HOP_STRONG_RELATION_PROPS = list(_STRONG_RELATION_PROPS)
+
 # P5: 正常搜索触发 Web 丰富的强相关节点下限（<6 时触发）
 _ENRICH_TRIGGER_THRESHOLD = 6
 # Web 丰富结果缓存 TTL（1h）
 _ENRICH_CACHE_TTL = 3600
-# 触发丰富判定的强相关阈值
-_STRONG_RELEVANCE_THRESHOLD = 0.6
 
 # Neo4j 图谱缓存有效期（7 天）：过期后视为未命中，从 Wikidata 重建。
 # 修复 3：此前 Neo4j 图谱无失效机制——类型映射/白名单等逻辑改进
@@ -150,14 +157,19 @@ def _entity_to_node(entity_id: str | None, label: str | None, entity_type: str |
     }
 
 
-def _extract_related_qids(claims: dict, exclude_id: str) -> list[tuple[str, str]]:
+def _extract_related_qids(claims: dict, exclude_id: str,
+                          props: Optional[list[str]] = None) -> list[tuple[str, str]]:
     """从 claims 中提取 wikibase-item 类型的相关 QID，返回 [(qid, prop)]
 
     去重但保序：同一 qid 首次出现的属性优先（_RELATION_PROPS 语义类型在前）。
+
+    V3a: props 参数用于 hop≥2 收敛白名单（_HOP_STRONG_RELATION_PROPS），
+    丢弃分类/地理/家庭弱属性，防多跳堆满噪音。
     """
+    prop_order = props if props is not None else _RELATION_PROPS
     seen: set[str] = set()
     pairs: list[tuple[str, str]] = []
-    for prop_id in _RELATION_PROPS:
+    for prop_id in prop_order:
         for claim in claims.get(prop_id, []):
             mainsnak = claim.get("mainsnak", {})
             if mainsnak.get("datatype") != "wikibase-item":
@@ -209,6 +221,61 @@ def _edge_evidence(prop: str, target: WikidataEntity) -> str:
     return f"{prop_label}：{target.label or target.id}"
 
 
+# ---- V2c: 节点年份提取（时间轴-图谱联动的数据基础） ----
+
+# 时间值解析：ISO 8601 "+1879-03-14T00:00:00Z" / "-0445-03-14T00:00:00Z"
+# 捕获符号 + 年份（公元前用负年，如 -0445 → -445）
+_TIME_YEAR_RE = re.compile(r"^([+-])(\d{1,6})")
+# 锚点年属性（起始/存在）与结束年属性（逝世/解散/消亡）
+_ANCHOR_YEAR_PROPS = ("P569", "P571", "P577", "P585")
+_END_YEAR_PROPS = ("P570", "P576", "P8556")
+
+
+def _extract_claim_year(claim: dict) -> Optional[int]:
+    """从单条 claim 的 mainsnak（time 类型）提取年份"""
+    mainsnak = claim.get("mainsnak", {})
+    if mainsnak.get("datatype") != "time":
+        return None
+    value = mainsnak.get("datavalue", {}).get("value", "")
+    # 兼容两种 shape：time 字符串 或 {"time": ...}（Wikidata raw 结构）
+    if isinstance(value, dict):
+        value = value.get("time", "")
+    if not isinstance(value, str):
+        return None
+    m = _TIME_YEAR_RE.match(value)
+    if not m:
+        return None
+    sign = -1 if m.group(1) == "-" else 1
+    return sign * int(m.group(2))
+
+
+def _extract_node_year(claims: dict) -> tuple[Optional[int], Optional[int]]:
+    """从实体 claims 提取 (year, year_end) 年段
+
+    V2c：时间轴-图谱联动需要每个节点"活跃于某年"的判定。
+    - 锚点年：P569 出生 / P571 成立 / P577 出版 / P585 事件时间点（取最早）
+    - 结束年：P570 逝世 / P576 解散 / P8556 消亡（取最早）
+
+    Returns:
+        (year, year_end)；无时间属性的返回 (None, None)
+    """
+    year: Optional[int] = None
+    year_end: Optional[int] = None
+    if not claims:
+        return year, year_end
+    for prop in _ANCHOR_YEAR_PROPS:
+        for claim in claims.get(prop, []):
+            y = _extract_claim_year(claim)
+            if y is not None and (year is None or y < year):
+                year = y
+    for prop in _END_YEAR_PROPS:
+        for claim in claims.get(prop, []):
+            y = _extract_claim_year(claim)
+            if y is not None and (year_end is None or y < year_end):
+                year_end = y
+    return year, year_end
+
+
 # ---- P5: 正常搜索触发 Web 内容丰富（同步合并） ----
 
 _web_search_instance: WebSearch | None = None
@@ -229,7 +296,8 @@ def get_extractor() -> EntityExtractor:
     return _extractor_instance
 
 
-def _should_enrich(nodes: list[dict], edges: list[dict], center_id: str) -> bool:
+def _should_enrich(nodes: list[dict], edges: list[dict], center_id: str,
+                   depth: int = 1) -> bool:
     """Web 丰富触发判定：语义多样性不足时触发（替代旧"强相关节点数 <6"）
 
     旧规则只对"图谱薄"的实体触发，对 Wikidata 数据丰富的实体（人物/组织等）
@@ -241,18 +309,24 @@ def _should_enrich(nodes: list[dict], edges: list[dict], center_id: str) -> bool
     - 关联节点类型单一（< 3 种）→ 内容单调（如全 entity）
     - 语义边类型 ≤ 1 种 → 关系单调（如全 related_to）
 
+    V3a：只统计 hop-1 子图（hop 缺省视为 1，兼容单跳调用）——多跳后 related
+    节点数必然 ≥6，若统计全量会恒不触发，Web 丰富通道在多跳图上静默关闭。
+
     成本控制：丰富结果缓存 web_enrich:{qid} 1h，同一实体每小时至多一次 LLM 调用。
     """
     related = [
         n for n in nodes
-        if n.get("id") != center_id and n.get("type") != "category"
+        if n.get("id") != center_id
+        and n.get("type") != "category"
+        and (n.get("hop", 1) == 1)  # 仅 hop-1 参与判定（V3a）
     ]
     if len(related) < _ENRICH_TRIGGER_THRESHOLD:
         return True
     distinct_types = len({n.get("type", "entity") for n in related})
     if distinct_types < 3:
         return True
-    distinct_edge_types = len({e.get("type", "other") for e in edges})
+    hop1_edges = [e for e in edges if e.get("hop", 1) == 1]
+    distinct_edge_types = len({e.get("type", "other") for e in hop1_edges})
     if distinct_edge_types <= 1:
         return True
     return False
@@ -381,7 +455,9 @@ async def get_graph(
     """
     repo = get_neo4j_repo()
     cache = get_cache()
-    cache_key = f"graph:{noun_id}:depth{depth}"
+    # V2c: 缓存键升级 v2——旧缓存无 year/year_end/hop 字段，发布时间一次性失效
+    # 避免"有的实体联动正常、有的完全无反应"（旧 Redis 缓存无年段数据）
+    cache_key = f"graph:{noun_id}:depth{depth}:v2"
 
     # Try cache — 注意区分 "未命中" 与 "缓存了空结果"
     try:
@@ -427,33 +503,41 @@ async def build_graph_from_wikidata(
     extractor: Optional[EntityExtractor] = None,
     cache: Optional[CacheService] = None,
 ) -> dict:
-    """从 Wikidata 构建基础图谱 + 可选 Web 丰富
+    """从 Wikidata 构建基础图谱（多跳）+ 可选 Web 丰富
 
-    目前仅支持 depth=1（单跳）；多跳留待后续实现。
+    V3a：由单跳扩展为递归 depth 1→3 多跳构建。
+    - hop-1 展开 _RELATION_PROPS（含分类），hop≥2 仅展开 _HOP_STRONG_RELATION_PROPS
+      （决策②：丢弃分类/地理/家庭弱属性，防多跳堆满噪音）
+    - 每跳 ≤ _RELATED_LIMIT 节点，已访问集合防环
+    - relevance 随跳衰减：hop-1 保留 prop 制（强 0.7 / 分类 0.2），hop≥2 乘衰减系数
+    - 节点/边写库（hop 标注），重建前清理子图内部陈旧边
 
     去噪与排序（P4）：
     - P31/P279 分类目标保留但降级为 type:"category" + relevance:0.2
     - 关联节点按类型优先级排序后截断 _RELATED_LIMIT
 
-    Web 丰富（P5）：
-    - 基础图谱强相关节点（relevance>=0.6，不含中心）<6 时，同步触发
-      Web Search + LLM 提取合并（结果缓存 1h）
-    - 否则仅 Wikidata 基础图谱（省成本，NFR-6）
+    Web 丰富（P5，仅 hop-1 判定）：
+    - hop-1 子图语义多样性不足时，同步触发 Web Search + LLM 提取合并（缓存 1h）
     """
-    nodes = []
-    edges = []
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen_ids: set[str] = set()  # 防环
+    seen_edge_keys: set[tuple] = set()
+
     center_entity = await wikidata.get_entity_by_qid(entity_id)
 
     if not center_entity:
         return {"nodes": [], "edges": [], "has_more": False}
 
-    # 重建前清理陈旧出边（修复 3）：删除上次构建残留的旧关系，
+    # 重建前清理中心陈旧出边（修复 3）：删除上次构建残留的旧关系，
     # 避免旧逻辑数据（占位符 evidence、过期类型/白名单）与新构建累积混淆，
     # 同时让"部分写入中断"的图谱在下次触发重建时自愈。
-    # 入边属于其他实体的图谱，不删除。
+    # V3a: 多跳内部边（hop1→hop2、hop2→hop3）由下方遍历时的逐节点清理处理
+    #（每次为该节点写边前先 delete_outgoing_relations，保证陈旧边清干净）。
     await neo4j.delete_outgoing_relations(entity_id)
 
     has_sitelink = bool(center_entity.sitelink_zh or center_entity.sitelink_en)
+    center_year, center_year_end = _extract_node_year(center_entity.claims)
 
     # Center node（复用统一 shape，使用 'name' 键匹配 neo4j upsert 契约）
     center_node = _entity_to_node(
@@ -461,84 +545,149 @@ async def build_graph_from_wikidata(
         center_entity.description, has_sitelink,
         relevance=_CENTER_RELEVANCE,
     )
+    center_node["year"] = center_year
+    center_node["year_end"] = center_year_end
+    center_node["hop"] = 0
     nodes.append(center_node)
+    seen_ids.add(entity_id)
     await neo4j.upsert_entity(center_node)
 
-    # Fetch related entities
-    if depth < 1:
-        return {"nodes": nodes, "edges": edges, "has_more": False}
+    # ---- 递归多跳构建 ----
+    # frontier: 当前跳的候选 (source_id, qid, prop, source_node, source_relevance)
+    frontier: list[tuple] = []
+    related_pairs = _extract_related_qids(center_entity.claims, entity_id)
+    frontier = [(entity_id, qid, prop) for qid, prop in related_pairs]
+    has_more = False
+    # V3a: 已清理过出边的源节点集合——每次为该节点写边前先删陈旧出边，
+    # 保证前次更深度构建写入的 hopN→hopN+1 内部边被清干净（B1 修复）。
+    # 中心出边已在构建前清理，故只需处理 hop≥2 的非中心源节点。
+    stale_cleaned: set[str] = set()
 
-    claims = center_entity.claims
-    related_pairs = _extract_related_qids(claims, entity_id)
+    for hop in range(1, depth + 1):
+        if not frontier:
+            break
+        # 本跳属性白名单：hop-1 全量，hop≥2 收敛为强关系属性（决策②）
+        props = _RELATION_PROPS if hop == 1 else _HOP_STRONG_RELATION_PROPS
+        # 过滤：本跳候选若已在 seen 跳过；hop≥2 重筛属性
+        hop_candidates: list[tuple[str, str, str]] = []
+        for src_id, qid, prop in frontier:
+            if qid in seen_ids:
+                continue
+            if hop >= 2 and prop not in props:
+                continue
+            hop_candidates.append((src_id, qid, prop))
 
-    truncated = len(related_pairs) > _RELATED_LIMIT
-    # 多取 2x 候选再排序，保证高优先级类型（person 等）不被低优先级淹没后截断
-    fetch_pairs = related_pairs[:_RELATED_LIMIT * 2]
-
-    # 并发拉取关联实体详情，减少串行 N+1 延迟
-    related_entities = await asyncio.gather(
-        *[wikidata.get_entity_by_qid(qid) for qid, _ in fetch_pairs],
-        return_exceptions=True,
-    )
-
-    related_nodes = []
-    for (qid, prop), related in zip(fetch_pairs, related_entities):
-        # gather(return_exceptions=True) 时元素可能是异常对象，需 isinstance 判断
-        if not isinstance(related, WikidataEntity):
+        if not hop_candidates:
+            frontier = []
             continue
-        is_category = prop in _CATEGORY_PROPS
-        node_type = "category" if is_category else (related.type or "entity")
-        node_relevance = _CATEGORY_RELEVANCE if is_category else _STRONG_RELEVANCE
 
-        node = _entity_to_node(
-            qid, related.label, node_type,
-            related.description,
-            bool(related.sitelink_zh or related.sitelink_en),
-            relevance=node_relevance,
-        )
-        related_nodes.append((node, qid, prop, related))
+        truncated = len(hop_candidates) > _RELATED_LIMIT
+        # 多取 2x 候选再排序（类型优先级），保证 person 等不被低优先级淹没后截断
+        fetch_candidates = hop_candidates[:_RELATED_LIMIT * 2]
 
-    # 按类型优先级排序后截断（person > event > technology > organization > ... > category）
-    related_nodes.sort(key=lambda item: _type_priority_sort_key(item[0]))
-    related_nodes = related_nodes[:_RELATED_LIMIT]
+        # 批量拉取本跳候选实体详情（并发，Semaphore 限流）
+        qids_to_fetch = list(dict.fromkeys(qid for _, qid, _ in fetch_candidates))
+        batch = await wikidata.get_entities_by_qids(qids_to_fetch)
+        # 批量接口失败/不支持时降级为逐个拉取（向后兼容 Fake/旧实现）
+        if not batch and len(qids_to_fetch) > 1:
+            fetched = await asyncio.gather(
+                *[wikidata.get_entity_by_qid(qid) for qid in qids_to_fetch],
+                return_exceptions=True,
+            )
+            batch = {
+                qid: ent for qid, ent in zip(qids_to_fetch, fetched)
+                if isinstance(ent, WikidataEntity)
+            }
 
-    for node, qid, prop, related in related_nodes:
-        nodes.append(node)
-        await neo4j.upsert_entity(node)
+        # 组装本跳节点（类型优先级排序后截断）
+        hop_nodes: list[tuple[dict, str, str, WikidataEntity]] = []
+        for src_id, qid, prop in fetch_candidates:
+            related = batch.get(qid)
+            if not isinstance(related, WikidataEntity):
+                continue
+            is_category = prop in _CATEGORY_PROPS
+            node_type = "category" if is_category else (related.type or "entity")
+            node_relevance = _CATEGORY_RELEVANCE if is_category else _STRONG_RELEVANCE
+            if hop >= 2:
+                node_relevance = node_relevance * _HOP_RELEVANCE_DECAY.get(hop, 0.3)
 
-        edge_relevance = _edge_relevance_for_prop(prop)
-        edge_type = _edge_type_for_prop(prop)
-        edge_confidence = _edge_confidence(prop, related)
-        edge = {
-            "source": entity_id,
-            "target": qid,
-            "type": edge_type,
-            "confidence": edge_confidence,
-            "relevance": edge_relevance,
-            # 来源指向目标实体的 Wikipedia 页面（用户可验证该端点），中心页面兜底
-            "source_url": (
-                related.sitelink_zh or related.sitelink_en
-                or center_entity.sitelink_zh or center_entity.sitelink_en or ""
-            ),
-            "evidence": _edge_evidence(prop, related),
-        }
-        edges.append(edge)
+            node = _entity_to_node(
+                qid, related.label, node_type,
+                related.description,
+                bool(related.sitelink_zh or related.sitelink_en),
+                relevance=node_relevance,
+            )
+            year, year_end = _extract_node_year(related.claims)
+            node["year"] = year
+            node["year_end"] = year_end
+            node["hop"] = hop
+            hop_nodes.append((node, src_id, qid, prop, related))
 
-        # write edge to Neo4j（UPPER_SNAKE 存储，读取时归一小写语义类型）
-        await neo4j.upsert_relation(
-            source_id=entity_id,
-            target_id=qid,
-            rel_type=edge_type.upper(),
-            confidence=edge_confidence,
-            source_url=edge["source_url"],
-            evidence=edge["evidence"],
-            relevance=edge_relevance,
-        )
+        # 按类型优先级排序后截断（person > event > ... > category）
+        hop_nodes.sort(key=lambda item: _type_priority_sort_key(item[0]))
+        hop_nodes = hop_nodes[:_RELATED_LIMIT]
 
-    # P5: 语义多样性不足时触发 Web Search + LLM 丰富（同步合并）
-    # （替代旧"强相关节点 <6"：旧规则对数据丰富的实体反而关闭丰富通道，
-    #   导致图谱单调。新规则按节点/边语义多样性判定，见 _should_enrich。）
-    if depth >= 1 and _should_enrich(nodes, edges, entity_id):
+        next_frontier: list[tuple] = []
+        for node, src_id, qid, prop, related in hop_nodes:
+            if qid in seen_ids:
+                continue
+            if src_id != entity_id and src_id not in stale_cleaned:
+                await neo4j.delete_outgoing_relations(src_id)
+                stale_cleaned.add(src_id)
+            nodes.append(node)
+            seen_ids.add(qid)
+            await neo4j.upsert_entity(node)
+
+            edge_relevance = _edge_relevance_for_prop(prop)
+            if hop >= 2:
+                edge_relevance = edge_relevance * _HOP_RELEVANCE_DECAY.get(hop, 0.3)
+            edge_type = _edge_type_for_prop(prop)
+            edge_confidence = _edge_confidence(prop, related)
+            edge_key = (src_id, qid, edge_type)
+            if edge_key not in seen_edge_keys:
+                seen_edge_keys.add(edge_key)
+                edge = {
+                    "source": src_id,
+                    "target": qid,
+                    "type": edge_type,
+                    "confidence": edge_confidence,
+                    "relevance": edge_relevance,
+                    # 来源指向目标实体的 Wikipedia 页面（用户可验证该端点），中心页面兜底
+                    "source_url": (
+                        related.sitelink_zh or related.sitelink_en
+                        or center_entity.sitelink_zh or center_entity.sitelink_en or ""
+                    ),
+                    "evidence": _edge_evidence(prop, related),
+                    "hop": hop,
+                }
+                edges.append(edge)
+                # write edge to Neo4j（UPPER_SNAKE 存储，读取时归一小写语义类型）
+                await neo4j.upsert_relation(
+                    source_id=src_id,
+                    target_id=qid,
+                    rel_type=edge_type.upper(),
+                    confidence=edge_confidence,
+                    source_url=edge["source_url"],
+                    evidence=edge["evidence"],
+                    relevance=edge_relevance,
+                    hop=hop,
+                )
+
+            # 下一跳候选：hop<depth 时从本跳节点的 claims 收集（仅强关系属性）
+            if hop < depth:
+                for next_qid, next_prop in _extract_related_qids(
+                    related.claims, qid, props=_HOP_STRONG_RELATION_PROPS
+                ):
+                    next_frontier.append((qid, next_qid, next_prop))
+
+        frontier = next_frontier
+
+        # 本跳有截断 → has_more 置位（还有更多候选未展开）
+        if truncated and depth > hop:
+            has_more = True
+
+    # P5: 语义多样性不足时触发 Web Search + LLM 丰富（同步合并，仅 hop-1 判定）
+    if depth >= 1 and _should_enrich(nodes, edges, entity_id, depth=depth):
         web = web_search or get_web_search()
         ext = extractor or get_extractor()
         enrich_cache = cache if cache is not None else get_cache()
@@ -562,16 +711,18 @@ async def build_graph_from_wikidata(
                         n["type"] = center_type_override
             for n in enrich.get("nodes", []):
                 if n["id"] not in enrich_node_ids:
+                    n.setdefault("hop", 1)
                     nodes.append(n)
                     enrich_node_ids.add(n["id"])
             seen_edges = {(e["source"], e["target"], e["type"]) for e in edges}
             for e in enrich.get("edges", []):
                 key = (e["source"], e["target"], e["type"])
                 if key not in seen_edges:
+                    e.setdefault("hop", 1)
                     edges.append(e)
                     seen_edges.add(key)
 
-    # 全部 upsert 成功后再标记构建完成时间（修复 3 新鲜度基准）；
+    # 全部 upsert 成功后再标记构建完成时间与深度（修复 3 + V3a 深度感知新鲜度）；
     # 构建中途异常则不标记，get_graph 下次视为未命中并重新构建。
-    await neo4j.mark_graph_built(entity_id)
-    return {"nodes": nodes, "edges": edges, "has_more": truncated}
+    await neo4j.mark_graph_built(entity_id, depth=depth)
+    return {"nodes": nodes, "edges": edges, "has_more": has_more}

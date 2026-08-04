@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { CONFIDENCE_LEVELS } from "@/lib/constants";
+import { CONFIDENCE_LEVELS, EDGE_LABELS } from "@/lib/constants";
 
+// 边类型颜色：与 GraphCanvas.getEdgeColor 保持一致的 6 色板
+// （EDGE_LABELS 中文映射来自 constants 单一数据源）
 const EDGE_TYPES: Record<string, { label: string; color: string }> = {
-  influence: { label: "影响", color: "#FB7185" },
-  affiliation: { label: "隶属", color: "#38BDF8" },
-  creation: { label: "创作", color: "#34D399" },
-  competition: { label: "竞争", color: "#FBBF24" },
-  collaboration: { label: "合作", color: "#A78BFA" },
-  other: { label: "其他", color: "#64748B" },
+  influence: { label: EDGE_LABELS.influence, color: "#FB7185" },
+  affiliation: { label: EDGE_LABELS.affiliation, color: "#38BDF8" },
+  creation: { label: EDGE_LABELS.creation, color: "#34D399" },
+  competition: { label: EDGE_LABELS.competition, color: "#FBBF24" },
+  collaboration: { label: EDGE_LABELS.collaboration, color: "#A78BFA" },
+  other: { label: EDGE_LABELS.other, color: "#64748B" },
 };
 
 const NODE_TYPES: Record<string, { label: string; color: string; shape: string }> = {

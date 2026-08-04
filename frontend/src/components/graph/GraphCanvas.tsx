@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as d3 from "d3";
 import type { GraphNode, GraphEdge } from "@/lib/api";
-import { CONFIDENCE_LEVELS } from "@/lib/constants";
+import { CONFIDENCE_LEVELS, edgeLabel } from "@/lib/constants";
 
 interface GraphCanvasProps {
   centerId: string;
@@ -11,6 +11,10 @@ interface GraphCanvasProps {
   edges: GraphEdge[];
   onNodeClick?: (node: GraphNode) => void;
   onNodeHover?: (node: GraphNode | null) => void;
+  /** V3b: 双击节点展开其图谱（= 切换图谱中心，复用 handleExploreGraph） */
+  onExpandNode?: (node: GraphNode) => void;
+  /** V2c: 时间轴选中的年份；null = 全时段。非该年段活跃的节点淡化 */
+  activeYear?: number | null;
 }
 
 const NODE_COLORS: Record<string, string> = {
@@ -42,12 +46,15 @@ interface SimNode extends d3.SimulationNodeDatum {
   confidence: number;
   relevance?: number;
   summary?: string;
+  year?: number;
+  year_end?: number;
 }
 
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   type: string;
   confidence: number;
   source_url: string;
+  evidence?: string;
 }
 
 export default function GraphCanvas({
@@ -56,6 +63,8 @@ export default function GraphCanvas({
   edges,
   onNodeClick,
   onNodeHover,
+  onExpandNode,
+  activeYear = null,
 }: GraphCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +78,7 @@ export default function GraphCanvas({
   // 存 d3 selection，切换淡化开关时只更新属性、不重建整图（保留缩放/布局）
   // join 返回类型含 BaseType，故用宽松泛型
   const linksRef = useRef<d3.Selection<SVGLineElement | d3.BaseType, SimLink, SVGGElement, unknown> | null>(null);
+  const hitLinksRef = useRef<d3.Selection<SVGLineElement | d3.BaseType, SimLink, SVGGElement, unknown> | null>(null);
   const shapesRef = useRef<d3.Selection<SVGGElement | d3.BaseType, SimNode, SVGGElement, unknown> | null>(null);
   const getEdgeColor = useCallback((type: string) => {
     const edgeColors: Record<string, string> = {
@@ -91,24 +101,36 @@ export default function GraphCanvas({
       weakenEnabled && confidence < WEAK_EDGE_THRESHOLD ? "3,5" : "none",
     [weakenEnabled]
   );
-  // P9: 节点淡化参数（中心 1.0，其他随 relevance 分级）
+  // V2c: 节点年段活跃判定——(year ?? -∞) ≤ activeYear ≤ (yearEnd ?? +∞)
+  const isYearActive = useCallback(
+    (d: SimNode) => {
+      if (activeYear == null) return true; // 全时段
+      const start = d.year ?? Number.NEGATIVE_INFINITY;
+      const end = d.year_end ?? Number.POSITIVE_INFINITY;
+      return start <= activeYear && activeYear <= end;
+    },
+    [activeYear]
+  );
+  // P9: 节点淡化参数（中心 1.0，其他随 relevance 分级；V2c 叠加年段淡化）
   const nodeOpacity = useCallback(
     (d: SimNode) => {
-      if (!weakenEnabled) return 1;
-      if (d.id === centerId) return 1;
+      if (!weakenEnabled) return isYearActive(d) ? 1 : 0.3;
+      if (d.id === centerId) return isYearActive(d) ? 1 : 0.3;
+      if (!isYearActive(d)) return 0.2;
       return 0.45 + (d.relevance ?? 0.5) * 0.55;
     },
-    [weakenEnabled, centerId]
+    [weakenEnabled, centerId, isYearActive]
   );
 
-  // 淡化开关切换：仅更新已有元素的 opacity/dash，不重建力导向布局
+  // 淡化开关切换：仅更新已有元素的 opacity/dash，不重建力导向布局。
+  // V2c: activeYear 变化也走此路径（只改属性不改布局，满足联动性能约束）
   useEffect(() => {
     if (!linksRef.current || !shapesRef.current) return;
     linksRef.current
       .attr("stroke-opacity", (d) => edgeOpacity(d.confidence))
       .attr("stroke-dasharray", (d) => edgeDash(d.confidence));
     shapesRef.current.attr("opacity", nodeOpacity);
-  }, [weakenEnabled, edgeOpacity, edgeDash, nodeOpacity]);
+  }, [weakenEnabled, edgeOpacity, edgeDash, nodeOpacity, activeYear]);
 
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -148,6 +170,11 @@ export default function GraphCanvas({
       });
 
     svg.call(zoom);
+    // V3b: 禁用 d3 zoom 自带的双击缩放（dblclick.zoom）——与节点双击展开冲突。
+    // 注意：必须在 svg selection 上移除（d3-zoom 通过 selection.on 绑定 DOM 监听器），
+    // 而非 zoom.on("dblclick.zoom", null)——后者走 dispatch，会抛 "unknown type: dblclick"。
+    // 缩放仍可用滚轮 / 重置按钮。
+    svg.on("dblclick.zoom", null);
     zoomRef.current = zoom;
 
     // 初始就给出宽松平移范围（而非等 fitToCenter 才设置）：
@@ -174,6 +201,8 @@ export default function GraphCanvas({
       confidence: n.confidence,
       relevance: n.relevance ?? 0.5,
       summary: n.summary,
+      year: n.year,
+      year_end: n.year_end,
     }));
 
     const simLinks: SimLink[] = edges.map((e) => ({
@@ -182,6 +211,7 @@ export default function GraphCanvas({
       type: e.type,
       confidence: e.confidence,
       source_url: e.source_url,
+      evidence: e.evidence, // V1b: 打通 evidence 到 tooltip
     }));
 
     // Force simulation
@@ -194,7 +224,10 @@ export default function GraphCanvas({
       .force("center", d3.forceCenter(initialX, initialY))
       .force("collision", d3.forceCollide().radius(30));
 
-    // Draw edges
+    // Draw edges.
+    // V1b: 每条边画两条 line——视觉 line（现有样式）+ 宽透明命中 line。
+    // 弱边最细 0.75px 鼠标几乎不可能命中，hover 绑在命中线上才能可靠触发。
+    // 命中线 pointer-events:stroke（仅线内命中，不遮节点）。
     const link = g.append("g")
       .selectAll("line")
       .data(simLinks)
@@ -203,8 +236,55 @@ export default function GraphCanvas({
       .attr("stroke-width", (d) => Math.max(0.75, d.confidence * 3))
       .attr("stroke-opacity", (d) => (weakenEnabled ? 0.2 + d.confidence * 0.5 : 1))
       .attr("stroke-dasharray", (d) =>
-        weakenEnabled && d.confidence < WEAK_EDGE_THRESHOLD ? "3,5" : "none");
+        weakenEnabled && d.confidence < WEAK_EDGE_THRESHOLD ? "3,5" : "none")
+      .attr("pointer-events", "none"); // 视觉线不参与命中，交给下面的命中线
     linksRef.current = link;
+
+    // V1b: 宽透明命中线（stroke-width 10~12），承载边 hover
+    const hitLink = g.append("g")
+      .selectAll("line")
+      .data(simLinks)
+      .join("line")
+      .attr("stroke", "transparent")
+      .attr("stroke-width", 11)
+      .attr("stroke-linecap", "round")
+      .attr("pointer-events", "stroke")
+      .on("mouseenter", function (event, d) {
+        const safeType = escapeHtml(edgeLabel(d.type));
+        const safeEvidence = d.evidence ? escapeHtml(d.evidence) : "";
+        const sourceUrl = d.source_url || "";
+        const confClass = d.confidence >= CONFIDENCE_LEVELS.HIGH.min
+          ? 'text-success'
+          : d.confidence >= CONFIDENCE_LEVELS.MEDIUM.min
+            ? 'text-warning'
+            : 'text-destructive';
+        const sourceHtml = sourceUrl
+          ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer"
+                class="text-brand-accent hover:underline">查看来源 →</a>`
+          : `<span class="text-surface-muted-foreground">来源未知</span>`;
+        tooltip.style("opacity", 1).style("display", "block").html(`
+          <div class="p-3 text-sm min-w-[180px] max-w-[260px]">
+            <div class="flex items-center gap-1.5">
+              <span class="font-semibold text-surface-foreground font-heading text-base">${safeType}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted ${confClass} border border-border-default">
+                ${Math.round(d.confidence * 100)}%
+              </span>
+            </div>
+            ${safeEvidence ? `<p class="mt-1.5 text-xs text-surface-muted-foreground leading-relaxed">${safeEvidence}</p>` : ""}
+            <p class="mt-1.5 text-xs">${sourceHtml}</p>
+          </div>
+        `);
+      })
+      .on("mousemove", function (event) {
+        const [mx, my] = d3.pointer(event, svgRef.current?.parentElement);
+        tooltip
+          .style("left", `${Math.min(mx + 15, size.width - 250)}px`)
+          .style("top", `${Math.max(my - 10, 10)}px`);
+      })
+      .on("mouseleave", function () {
+        tooltip.style("opacity", 0).style("display", "none");
+      });
+    hitLinksRef.current = hitLink;
 
     // Draw nodes.
     // 拖动约定：普通拖拽 = 平移视图（在任何位置、包括节点上），
@@ -349,10 +429,22 @@ export default function GraphCanvas({
         onNodeHover?.(null);
       });
 
-      // Click
-      el.on("click", function () {
+      // Click —— V3b: 按 event.detail 区分单击/双击。
+      // 双击派发序列：click(detail=1) → click(detail=2) → dblclick。
+      // detail>=2 的 click 直接跳过（避免"先选中再展开"闪动），展开在 dblclick 分支。
+      el.on("click", function (event) {
+        if (event.detail >= 2) return;
         onNodeClick?.(d as unknown as GraphNode);
       });
+
+      // V3b: 双击节点 = 展开其图谱（切换中心）。需拦截 zoom 的 dblclick.zoom
+      //（见下方 zoom.on("dblclick.zoom", null)），否则同一双击会同时缩放+切中心。
+      if (onExpandNode) {
+        el.on("dblclick", function (event) {
+          event.stopPropagation(); // 阻断冒泡到 svg（d3 zoom 已禁用，双保险）
+          onExpandNode?.(d as unknown as GraphNode);
+        });
+      }
     });
 
     // 布局收敛后自动居中适配：
@@ -402,6 +494,14 @@ export default function GraphCanvas({
         .attr("y1", (d) => (d.source as SimNode).y || 0)
         .attr("x2", (d) => (d.target as SimNode).x || 0)
         .attr("y2", (d) => (d.target as SimNode).y || 0);
+      // V1b: 命中线与视觉线同步移动
+      if (hitLink) {
+        hitLink
+          .attr("x1", (d) => (d.source as SimNode).x || 0)
+          .attr("y1", (d) => (d.source as SimNode).y || 0)
+          .attr("x2", (d) => (d.target as SimNode).x || 0)
+          .attr("y2", (d) => (d.target as SimNode).y || 0);
+      }
 
       node.attr("transform", (d) => `translate(${d.x || 0},${d.y || 0})`);
 
@@ -454,6 +554,7 @@ export default function GraphCanvas({
       cancelAnimationFrame(rafId);
       if (fitTimer) window.clearTimeout(fitTimer);
       linksRef.current = null;
+      hitLinksRef.current = null;
       shapesRef.current = null;
       zoomRef.current = null;
       fitToCenterRef.current = null;
@@ -461,9 +562,10 @@ export default function GraphCanvas({
       window.removeEventListener("resize", onResize);
     };
     // 淡化公式（edgeOpacity/edgeDash/nodeOpacity）仅经独立 effect 更新已有元素，
-    // 若加入依赖会导致整图重建；此处有意省略
+    // 若加入依赖会导致整图重建；此处有意省略。activeYear 由上述独立 effect 消费，
+    // 不在此依赖中（避免整图重建）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges, centerId, onNodeClick, onNodeHover, getEdgeColor]);
+  }, [nodes, edges, centerId, onNodeClick, onNodeHover, onExpandNode, getEdgeColor]);
 
   return (
     // absolute inset-0：按偏移量填满 relative 父卡片，尺寸在任何浏览器中都确定。

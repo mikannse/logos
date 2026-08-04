@@ -82,7 +82,9 @@ export interface GraphNode {
   relevance?: number; // 与中心实体的相关度（≠confidence 数据可靠度）
   summary?: string;
   image_url?: string;
-  year?: number;
+  year?: number; // 活跃起始年（时间轴-图谱联动，V2c）
+  year_end?: number; // 活跃结束年（可空；空则视为开区间）
+  hop?: number; // 距中心跳数（多跳构建，V3a）
 }
 
 export interface GraphEdge {
@@ -93,6 +95,7 @@ export interface GraphEdge {
   relevance?: number;
   source_url: string;
   evidence?: string;
+  hop?: number; // 这条边所属跳数（多跳构建，V3a）
 }
 
 export interface GraphResponse {

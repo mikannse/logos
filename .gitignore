@@ -15,3 +15,6 @@ venv/
 
 # 本地数据（匿名搜索历史快照）
 backend/data/
+
+# Playwright MCP 调试临时文件
+.playwright-mcp/

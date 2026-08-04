@@ -12,6 +12,8 @@ class GraphNode(BaseModel):
     summary: Optional[str] = None
     image_url: Optional[str] = None
     year: Optional[int] = None
+    year_end: Optional[int] = None
+    hop: Optional[int] = None  # 距中心跳数（多跳构建用；depth=1 时缺省）
 
 
 class GraphEdge(BaseModel):
@@ -22,6 +24,7 @@ class GraphEdge(BaseModel):
     relevance: float = Field(default=0.0, ge=0.0, le=1.0, description="与中心实体的相关度（≠confidence 数据可靠度）")
     source_url: str = ""
     evidence: Optional[str] = None
+    hop: Optional[int] = None  # 这条边所属跳数（多跳构建用）
 
 
 class GraphResponse(BaseModel):

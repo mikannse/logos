@@ -28,6 +28,21 @@ export const EDGE_COLORS: Record<string, string> = {
   default: "#64748B",        // 灰色 - 其他
 };
 
+// 关系类型中文标签（单一数据源：GraphCanvas 边 hover / GraphLegend 图例共用）
+export const EDGE_LABELS: Record<string, string> = {
+  influence: "影响",
+  affiliation: "隶属",
+  creation: "创作",
+  competition: "竞争",
+  collaboration: "合作",
+  other: "其他",
+};
+
+// 未知关系类型 fallback
+export function edgeLabel(type: string): string {
+  return EDGE_LABELS[type] ?? type;
+}
+
 // 置信度等级
 export const CONFIDENCE_LEVELS = {
   HIGH: { label: "高", min: 0.8, color: "#16A34A" },

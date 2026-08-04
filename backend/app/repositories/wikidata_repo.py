@@ -151,6 +151,12 @@ _ENTITY_TYPE_MAP = {
 class WikidataRepository:
     """Wikidata 数据源 Repository"""
 
+    # 并发拉取限流信号量（多跳构建并发放大防护）——共享同一 AsyncClient，
+    # 限制同时在途的 wbgetentities 请求数，避免 depth≥2 时打爆 Wikidata。
+    # M2 修复：asyncio.Semaphore 绑定事件循环，不能做类属性（pytest-asyncio
+    # 每测试新 loop / 多 worker 会抛 "bound to a different event loop"），
+    # 改为惰性创建实例属性。
+
     def __init__(self, proxy: Optional[str] = None):
         headers = {
             "User-Agent": "Logos/0.1 (Knowledge Graph Explorer; contact@logos.app) httpx/0.27",
@@ -162,6 +168,20 @@ class WikidataRepository:
 
             proxy = settings.https_proxy or settings.http_proxy or None
         self._client = httpx.AsyncClient(timeout=30.0, headers=headers, proxy=proxy)
+        # 惰性创建：在 async 上下文内（事件循环已确定）创建信号量
+        self._semaphore: Optional[asyncio.Semaphore] = None
+
+    @property
+    def _SEMAPHORE(self) -> asyncio.Semaphore:
+        """延迟创建信号量（绑定当前事件循环）
+
+        兼容测试用 __new__ 绕过 __init__ 的场景（无 _semaphore 属性）。
+        """
+        sem = getattr(self, "_semaphore", None)
+        if sem is None:
+            sem = asyncio.Semaphore(10)
+            self._semaphore = sem
+        return sem
 
     async def search(
         self, query: str, language: str = "zh", limit: int = 5
@@ -338,27 +358,182 @@ class WikidataRepository:
             "props": "claims",
             "format": "json",
         }
-        try:
-            response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-            parents: list[str] = []
-            for entity_data in data.get("entities", {}).values():
-                for claim in entity_data.get("claims", {}).get("P279", []):
-                    mainsnak = claim.get("mainsnak", {})
-                    if mainsnak.get("datatype") != "wikibase-item":
-                        continue
-                    value = mainsnak.get("datavalue", {}).get("value", {})
-                    if isinstance(value, dict) and value.get("id"):
-                        parents.append(value["id"])
-            return parents
-        except httpx.HTTPError as e:
-            print(f"Wikidata subclass fetch error: {e}")
-            return []
+        async with self._SEMAPHORE:
+            try:
+                response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                print(f"Wikidata subclass fetch error: {e}")
+                return []
+        parents: list[str] = []
+        for entity_data in data.get("entities", {}).values():
+            for claim in entity_data.get("claims", {}).get("P279", []):
+                mainsnak = claim.get("mainsnak", {})
+                if mainsnak.get("datatype") != "wikibase-item":
+                    continue
+                value = mainsnak.get("datavalue", {}).get("value", {})
+                if isinstance(value, dict) and value.get("id"):
+                    parents.append(value["id"])
+        return parents
 
     async def get_entity_by_qid(self, qid: str) -> Optional[WikidataEntity]:
         """通过 Q ID 获取实体（中英双语）"""
         return await self._get_entity_detail(qid, language="zh")
+
+    async def get_entities_by_qids(self, qids: list[str]) -> dict[str, WikidataEntity]:
+        """批量获取实体详情（一次 wbgetentities 调用，≤50 个 QID）
+
+        多跳构建用——hop≥2 的候选实体并发拉取时，从"每个 QID 一次 HTTP"
+        降为"每 50 个 QID 一次 HTTP"，大幅降低 depth≥2 的请求放大。
+        解析逻辑复用 _parse_entity_detail（与单条路径一致）。
+
+        Args:
+            qids: Q ID 列表（超出 50 截断）
+
+        Returns:
+            {qid: WikidataEntity} 映射；解析失败/不存在的实体不在结果中
+        """
+        if not qids:
+            return {}
+        batch = qids[:50]
+        params = {
+            "action": "wbgetentities",
+            "ids": "|".join(batch),
+            "props": "labels|descriptions|aliases|claims|sitelinks/urls",
+            "languages": "zh|en",
+            "sitefilter": "zhwiki|enwiki",
+            "format": "json",
+        }
+        async with self._SEMAPHORE:
+            try:
+                response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                print(f"Wikidata batch detail error: {e}")
+                return {}
+
+        result: dict[str, WikidataEntity] = {}
+        for qid in batch:
+            entity_data = data.get("entities", {}).get(qid)
+            if entity_data is None:
+                continue
+            entity = await self._parse_entity_detail(qid, entity_data, language="zh")
+            if entity is not None:
+                result[qid] = entity
+        return result
+
+    async def _parse_entity_detail(
+        self, qid: str, entity_data: dict, language: str = "zh"
+    ) -> Optional[WikidataEntity]:
+        """从 wbgetentities 单实体响应解析 WikidataEntity（批量/单条复用）
+
+        含 P7 三层类型推断（P31 直映射 → P279 继承 → 描述关键词）。
+        P279 继承需要额外拉取父类（_get_subclass_of），失败时降级不推断。
+        """
+        # 提取标签（优先请求语言，fallback 到英文）
+        labels = entity_data.get("labels", {})
+        label = (
+            labels.get(language, {}).get("value")
+            or labels.get("en", {}).get("value")
+            or qid
+        )
+        # 英文标签独立提取——用于消歧展示等场景，避免从别名猜测英文名
+        label_en = labels.get("en", {}).get("value", "")
+
+        # 提取描述
+        descriptions = entity_data.get("descriptions", {})
+        description = (
+            descriptions.get(language, {}).get("value")
+            or descriptions.get("en", {}).get("value")
+            or ""
+        )
+
+        # 提取别名
+        aliases_data = entity_data.get("aliases", {})
+        aliases = []
+        for lang in [language, "en"]:
+            for alias in aliases_data.get(lang, []):
+                val = alias.get("value", "")
+                if val and val not in aliases:
+                    aliases.append(val)
+
+        # 提取实例（instance of P31）与子类（subclass of P279）以推断类型
+        instance_of = []
+        subclass_of = []
+        claims = entity_data.get("claims", {})
+        for claim in claims.get("P31", []):
+            mainsnak = claim.get("mainsnak", {})
+            if mainsnak.get("datatype") == "wikibase-item":
+                datavalue = mainsnak.get("datavalue", {})
+                value = datavalue.get("value", {})
+                if isinstance(value, dict):
+                    instance_of.append(value.get("id", ""))
+        for claim in claims.get("P279", []):
+            mainsnak = claim.get("mainsnak", {})
+            if mainsnak.get("datatype") == "wikibase-item":
+                datavalue = mainsnak.get("datavalue", {})
+                value = datavalue.get("value", {})
+                if isinstance(value, dict):
+                    subclass_of.append(value.get("id", ""))
+
+        # P7 三层类型推断：P31 直映射 → P279 继承 → 描述关键词
+        entity_type = _map_wikidata_type(qid, instance_of)
+        if entity_type == "entity" and (instance_of or subclass_of):
+            parents = list(subclass_of)
+            if instance_of:
+                parents.extend(await self._get_subclass_of(instance_of[:10]))
+            entity_type = _map_wikidata_type(qid, instance_of, subclass_of=parents)
+        if entity_type == "entity":
+            entity_type = _map_wikidata_type(qid, instance_of, description=description)
+
+        # 提取 Wikipedia 链接
+        sitelinks = entity_data.get("sitelinks", {})
+        sitelink_zh = sitelinks.get("zhwiki", {}).get("url", "")
+        if not sitelink_zh:
+            sitelink_zh = sitelinks.get("zh_cnwiki", {}).get("url", "")  # 中文简体
+        sitelink_en = sitelinks.get("enwiki", {}).get("url", "")
+
+        return WikidataEntity(
+            id=qid,
+            label=label,
+            label_en=label_en,
+            description=description,
+            type=entity_type,
+            aliases=aliases,
+            sitelink_zh=sitelink_zh,
+            sitelink_en=sitelink_en,
+            claims=claims,
+        )
+
+    async def _get_entity_detail(
+        self, qid: str, language: str = "zh"
+    ) -> Optional[WikidataEntity]:
+        """获取实体详情"""
+        params = {
+            "action": "wbgetentities",
+            "ids": qid,
+            "props": "labels|descriptions|aliases|claims|sitelinks/urls",
+            "languages": f"{language}|en",
+            "sitefilter": "zhwiki|enwiki",
+            "format": "json",
+        }
+
+        async with self._SEMAPHORE:
+            try:
+                response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                print(f"Wikidata entity detail error: {e}")
+                return None
+
+        if qid not in data.get("entities", {}):
+            return None
+
+        entity_data = data["entities"][qid]
+        return await self._parse_entity_detail(qid, entity_data, language=language)
 
     async def get_claim_time_years(self, qids: list[str], prop: str) -> dict[str, int]:
         """批量获取实体某时间属性的年份（轻量，仅 claims，一次 HTTP 调用）
@@ -381,28 +556,29 @@ class WikidataRepository:
             "props": "claims",
             "format": "json",
         }
-        try:
-            response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-            result: dict[str, int] = {}
-            for qid, entity_data in data.get("entities", {}).items():
-                years = []
-                for claim in entity_data.get("claims", {}).get(prop, []):
-                    mainsnak = claim.get("mainsnak", {})
-                    if mainsnak.get("datatype") != "time":
-                        continue
-                    value = mainsnak.get("datavalue", {}).get("value", {})
-                    time_str = value.get("time", "") if isinstance(value, dict) else ""
-                    m = _TIME_YEAR_RE.match(time_str)
-                    if m:
-                        years.append(int(m.group(1)))
-                if years:
-                    result[qid] = min(years)
-            return result
-        except httpx.HTTPError as e:
-            print(f"Wikidata claim time batch error: {e}")
-            return {}
+        async with self._SEMAPHORE:
+            try:
+                response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                print(f"Wikidata claim time batch error: {e}")
+                return {}
+        result: dict[str, int] = {}
+        for qid, entity_data in data.get("entities", {}).items():
+            years = []
+            for claim in entity_data.get("claims", {}).get(prop, []):
+                mainsnak = claim.get("mainsnak", {})
+                if mainsnak.get("datatype") != "time":
+                    continue
+                value = mainsnak.get("datavalue", {}).get("value", {})
+                time_str = value.get("time", "") if isinstance(value, dict) else ""
+                m = _TIME_YEAR_RE.match(time_str)
+                if m:
+                    years.append(int(m.group(1)))
+            if years:
+                result[qid] = min(years)
+        return result
 
     async def get_entity_labels(self, qids: list[str], language: str = "zh") -> dict[str, str]:
         """批量获取实体标签（轻量，仅 labels，避免拉全量 claims）
@@ -423,24 +599,25 @@ class WikidataRepository:
             "languages": f"{language}|en",
             "format": "json",
         }
-        try:
-            response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-            result = {}
-            for qid, entity_data in data.get("entities", {}).items():
-                labels = entity_data.get("labels", {})
-                label = (
-                    labels.get(language, {}).get("value")
-                    or labels.get("en", {}).get("value")
-                    or ""
-                )
-                if label:
-                    result[qid] = label
-            return result
-        except httpx.HTTPError as e:
-            print(f"Wikidata label batch error: {e}")
-            return {}
+        async with self._SEMAPHORE:
+            try:
+                response = await self._client.get(WIKIDATA_SEARCH_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as e:
+                print(f"Wikidata label batch error: {e}")
+                return {}
+        result = {}
+        for qid, entity_data in data.get("entities", {}).items():
+            labels = entity_data.get("labels", {})
+            label = (
+                labels.get(language, {}).get("value")
+                or labels.get("en", {}).get("value")
+                or ""
+            )
+            if label:
+                result[qid] = label
+        return result
 
     async def close(self):
         await self._client.aclose()

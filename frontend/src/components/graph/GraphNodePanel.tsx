@@ -4,6 +4,7 @@ import { X, ExternalLink, ChevronRight, Network } from "lucide-react";
 import type { GraphNode, GraphEdge } from "@/lib/api";
 import ConfidenceBadge from "@/components/ui/ConfidenceBadge";
 import SourceLink from "@/components/ui/SourceLink";
+import { edgeLabel } from "@/lib/constants";
 
 interface GraphNodePanelProps {
   node: GraphNode;
@@ -92,7 +93,7 @@ export default function GraphNodePanel({
                   key={i}
                   className="flex items-center gap-2 text-sm p-2 rounded-xl border border-transparent hover:border-border-default hover:bg-surface-muted/60 transition-colors"
                 >
-                  <span className="text-surface-muted-foreground text-xs">{edge.type}</span>
+                  <span className="text-surface-muted-foreground text-xs">{edgeLabel(edge.type)}</span>
                   <ChevronRight className="w-3 h-3 text-surface-muted-foreground shrink-0" />
                   <span className="font-medium text-surface-foreground truncate">{relatedId}</span>
                   <ConfidenceBadge confidence={edge.confidence} />

@@ -173,10 +173,12 @@ def _make_graph_handler():
     rel = FakeRel("CREATION", {
         "confidence": 0.8, "source": "", "evidence": "", "relevance": 0.9,
     }, center, related)
-    path = FakePath([center, related], [rel])
 
+    # V3a: get_graph 拆为节点/边两条查询，按查询内容分发
     def handler(query, params):
-        return FakeResult(records=[{"path": path}])
+        if "RETURN n" in query:
+            return FakeResult(records=[{"n": center}, {"n": related}])
+        return FakeResult(records=[{"rel": rel, "a": center, "b": related}])
 
     return handler
 
@@ -205,10 +207,11 @@ class TestNeo4jRelevanceRead:
             "confidence": 0.8, "summary": "",
         })
         rel = FakeRel("RELATED_TO", {"confidence": 0.7}, center, related)
-        path = FakePath([center, related], [rel])
 
         def handler(query, params):
-            return FakeResult(records=[{"path": path}])
+            if "RETURN n" in query:
+                return FakeResult(records=[{"n": center}, {"n": related}])
+            return FakeResult(records=[{"rel": rel, "a": center, "b": related}])
 
         driver = FakeDriver(run_handler=handler)
         repo = make_repo(driver)

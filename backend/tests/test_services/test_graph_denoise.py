@@ -45,11 +45,15 @@ class FakeWikidata:
     async def get_entity_by_qid(self, qid):
         return self._entities.get(qid)
 
+    async def get_entities_by_qids(self, qids):
+        return {q: self._entities.get(q) for q in qids if q in self._entities}
+
 
 class FakeNeo4j:
     def __init__(self):
         self.entities: list[dict] = []
         self.relations: list[dict] = []
+        self.deleted_subgraphs: list[list[str]] = []
 
     async def upsert_entity(self, entity_data: dict):
         self.entities.append(entity_data)
@@ -62,7 +66,11 @@ class FakeNeo4j:
     async def delete_outgoing_relations(self, entity_id):
         return True
 
-    async def mark_graph_built(self, entity_id):
+    async def delete_subgraph_edges(self, entity_ids):
+        self.deleted_subgraphs.append(entity_ids)
+        return True
+
+    async def mark_graph_built(self, entity_id, depth=1):
         return True
 
 
@@ -264,7 +272,7 @@ class TestEdgeEvidenceAndRebuild:
                 self.deleted.append(entity_id)
                 return True
 
-            async def mark_graph_built(self, entity_id):
+            async def mark_graph_built(self, entity_id, depth=1):
                 self.marked.append(entity_id)
                 return True
 

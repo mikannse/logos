@@ -48,6 +48,9 @@ class FakeWikidata:
     async def get_entity_by_qid(self, qid):
         return self._entities.get(qid)
 
+    async def get_entities_by_qids(self, qids):
+        return {q: self._entities.get(q) for q in qids if q in self._entities}
+
     async def search_raw(self, query, language="zh", limit=5):
         self.calls.append(query)
         return []
@@ -69,7 +72,10 @@ class FakeNeo4j:
     async def delete_outgoing_relations(self, entity_id):
         return True
 
-    async def mark_graph_built(self, entity_id):
+    async def delete_subgraph_edges(self, entity_ids):
+        return True
+
+    async def mark_graph_built(self, entity_id, depth=1):
         return True
 
 

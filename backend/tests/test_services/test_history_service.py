@@ -70,3 +70,43 @@ def test_saved_at_defaulted_when_missing(tmp_path):
     del snap["saved_at"]
     svc.save_snapshot("Q937", snap)
     assert svc.get_snapshot("Q937")["saved_at"]
+
+
+# ---------- V3c: 快照防御校验 ----------
+
+def test_validate_graph_drops_dangling_edges():
+    """V3c: 边端点不在节点集合内 → 悬空边被丢弃"""
+    from fastapi import HTTPException
+    from app.api.history import _validate_snapshot_graph
+
+    graph = {
+        "nodes": [{"id": "Q1", "label": "a"}],
+        "edges": [
+            {"source": "Q1", "target": "Q2", "type": "creation"},  # Q2 不在节点集
+            {"source": "Q1", "target": "Q1", "type": "affiliation"},  # 自环合法
+        ],
+    }
+    cleaned = _validate_snapshot_graph(graph)
+    assert [e["target"] for e in cleaned["edges"]] == ["Q1"]
+
+
+def test_validate_graph_rejects_oversized_nodes():
+    """V3c: 节点数超上限 → 400"""
+    from fastapi import HTTPException
+    from app.api.history import _validate_snapshot_graph, _MAX_GRAPH_NODES
+
+    graph = {"nodes": [{"id": f"Q{i}"} for i in range(_MAX_GRAPH_NODES + 1)], "edges": []}
+    with pytest.raises(HTTPException):
+        _validate_snapshot_graph(graph)
+
+
+def test_validate_graph_rejects_oversized_edges():
+    """V3c: 边数超上限 → 400"""
+    from fastapi import HTTPException
+    from app.api.history import _validate_snapshot_graph, _MAX_GRAPH_EDGES
+
+    nodes = [{"id": "Q1"}, {"id": "Q2"}]
+    edges = [{"source": "Q1", "target": "Q2", "type": "creation"} for _ in range(_MAX_GRAPH_EDGES + 1)]
+    graph = {"nodes": nodes, "edges": edges}
+    with pytest.raises(HTTPException):
+        _validate_snapshot_graph(graph)

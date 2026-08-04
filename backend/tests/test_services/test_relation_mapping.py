@@ -109,6 +109,9 @@ class TestBuildGraphEdgeTypes:
         async def get_entity_by_qid(self, qid):
             return self._entities.get(qid)
 
+        async def get_entities_by_qids(self, qids):
+            return {q: self._entities.get(q) for q in qids if q in self._entities}
+
     class FakeN4j:
         def __init__(self):
             self.relations = []
@@ -125,7 +128,10 @@ class TestBuildGraphEdgeTypes:
         async def delete_outgoing_relations(self, entity_id):
             return True
 
-        async def mark_graph_built(self, entity_id):
+        async def delete_subgraph_edges(self, entity_ids):
+            return True
+
+        async def mark_graph_built(self, entity_id, depth=1):
             return True
 
     @pytest.mark.asyncio
@@ -170,10 +176,12 @@ class TestNeo4jEdgeNormalization:
             "confidence": 0.8, "summary": "", "relevance": 0.7,
         })
         rel = FakeRel("CREATION", {"confidence": 0.8, "relevance": 0.7}, center, related)
-        path = FakePath([center, related], [rel])
 
         def handler(query, params):
-            return FakeResult(records=[{"path": path}])
+            # V3a: get_graph 拆为节点/边两条查询，按查询内容分发
+            if "RETURN n" in query:
+                return FakeResult(records=[{"n": center}, {"n": related}])
+            return FakeResult(records=[{"rel": rel, "a": center, "b": related}])
 
         driver = FakeDriver(run_handler=handler)
         repo = Neo4jRepository(client=FakeClient(driver))
@@ -193,10 +201,11 @@ class TestNeo4jEdgeNormalization:
             "confidence": 0.8, "summary": "", "relevance": 0.5,
         })
         rel = FakeRel("RELATED_TO", {"confidence": 0.7, "relevance": 0.5}, center, related)
-        path = FakePath([center, related], [rel])
 
         def handler(query, params):
-            return FakeResult(records=[{"path": path}])
+            if "RETURN n" in query:
+                return FakeResult(records=[{"n": center}, {"n": related}])
+            return FakeResult(records=[{"rel": rel, "a": center, "b": related}])
 
         driver = FakeDriver(run_handler=handler)
         repo = Neo4jRepository(client=FakeClient(driver))
@@ -206,15 +215,17 @@ class TestNeo4jEdgeNormalization:
 
     @pytest.mark.asyncio
     async def test_get_graph_unknown_type_normalized_to_other(self):
+        center = FakeNode({"entityId": "Q1", "entityName": "c", "entityType": "entity",
+                           "confidence": 0.9, "summary": "", "relevance": 1.0})
         rel = FakeRel("MYSTERY_REL", {"confidence": 0.7, "relevance": 0.5},
-                      FakeNode({"entityId": "Q1", "entityName": "c", "entityType": "entity",
-                                "confidence": 0.9, "summary": "", "relevance": 1.0}),
+                      center,
                       FakeNode({"entityId": "Q2", "entityName": "r", "entityType": "entity",
                                 "confidence": 0.8, "summary": "", "relevance": 0.5}))
-        path = FakePath([rel.start_node, rel.end_node], [rel])
 
         def handler(query, params):
-            return FakeResult(records=[{"path": path}])
+            if "RETURN n" in query:
+                return FakeResult(records=[{"n": center}, {"n": rel.end_node}])
+            return FakeResult(records=[{"rel": rel, "a": rel.start_node, "b": rel.end_node}])
 
         driver = FakeDriver(run_handler=handler)
         repo = Neo4jRepository(client=FakeClient(driver))
